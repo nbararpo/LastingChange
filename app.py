@@ -3300,4 +3300,4 @@ def main():
         The corrected version provides more accurate statistical interpretations and better clinical guidance!
         """)
 if __name__ == "__main__":
-    main()
+    app.run(debug=True)
