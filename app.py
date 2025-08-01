@@ -14,6 +14,7 @@ import io
 from datetime import datetime
 import time
 from flask import Flask
+app = Flask(__name__)
 def main():
     st.title("Menthal Health App")
     st.write("Lasting Change")
@@ -3299,5 +3300,5 @@ def main():
         
         The corrected version provides more accurate statistical interpretations and better clinical guidance!
         """)
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(debug=True)
