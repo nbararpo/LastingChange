@@ -16,36 +16,89 @@ from datetime import datetime
 import time
 from flask import Flask
 
-# Convert environment variables to proper types
-# Handle environment variables at module level (if needed)
-def str_to_bool(value):
-    return str(value).lower() in ('true', '1', 'yes', 'on')
+# Quick fixes to apply to your current app.py
 
-# These run once when the module loads
-# ✅ Safe conversion with error handling
-def safe_int_conversion(value, default=8501):
-    """Safely convert string to integer"""
+# 1. REMOVE these imports at the top:
+# from flask import Flask  # ❌ DELETE THIS LINE
+
+# 2. REMOVE Flask-related code (around line 3303):
+# if __name__ == '__main__':
+#     app.run(debug=True)  # ❌ DELETE THESE LINES
+
+# 3. ADD memory optimization at the top:
+import gc
+import streamlit as st
+
+# Add this after imports
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def load_and_process_data(omics_file, demographics_file):
+    """Cached data loading to reduce memory usage"""
+    # Your existing data loading logic here
+    pass
+
+# 4. OPTIMIZE the main function:
+def main():
+    # Clear memory periodically
+    if st.button("🧹 Clear Memory Cache"):
+        st.cache_data.clear()
+        gc.collect()
+        st.success("Memory cleared!")
+    
+    # Your existing main() code here...
+    # But consider limiting analysis to smaller datasets initially
+
+# 5. ADD error handling around computationally intensive functions:
+def safe_analysis_wrapper(analysis_func, *args, **kwargs):
+    """Wrapper to handle memory/timeout errors"""
     try:
-        if value is None:
-            return default
-        # Strip whitespace and convert
-        return int(str(value).strip())
-    except (ValueError, TypeError):
-        return default
+        return analysis_func(*args, **kwargs)
+    except MemoryError:
+        st.error("Analysis requires too much memory. Try with a smaller dataset.")
+        return None
+    except Exception as e:
+        st.error(f"Analysis failed: {str(e)}")
+        return None
 
-PORT = safe_int_conversion(os.environ.get('PORT'), 8501)
-DEBUG_MODE = str_to_bool(os.environ.get('DEBUG', 'false'))
+# 6. LIMIT data processing in tabs:
+# In each tab, add checks like:
+if len(st.session_state.analyzer.protein_cols) > 100:
+    st.warning("⚠️ Large dataset detected. Some analyses may be slow.")
+    
+    # Option to analyze subset
+    analyze_subset = st.checkbox("Analyze first 50 proteins only (faster)")
+    if analyze_subset:
+        # Limit protein analysis
+        proteins_to_analyze = st.session_state.analyzer.protein_cols[:50]
+    else:
+        proteins_to_analyze = st.session_state.analyzer.protein_cols
+else:
+    proteins_to_analyze = st.session_state.analyzer.protein_cols
 
-# Your app starts here
-# Your app starts here
-st.title("LastingChange App")
-st.write("Welcome to your application!")
+# 7. OPTIMIZE requirements.txt:
 
-if DEBUG_MODE:
-    st.write(f"Running on port: {PORT}")
+# 8. CREATE a simpler version for initial deployment:
+# Comment out the most complex analysis methods temporarily
+# Focus on basic data upload and overview first
+# Add complex analyses back gradually
 
-# Rest of your app logic...
-st.write("Welcome to your app!")
+# 9. RENDER.COM optimizations:
+# In your Render.com environment variables, add:
+# STREAMLIT_SERVER_HEADLESS=true
+# STREAMLIT_SERVER_ENABLE_CORS=false
+# STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+# 10. DEPLOYMENT START COMMAND:
+# streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --server.maxUploadSize=200
+
+# 11. ADD progress bars for long operations:
+def long_analysis_with_progress():
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for i in range(100):
+        # Update progress
+        progress_bar.progress(i + 1)
+        status_text.text(f'Progress: {i+1}%')
 
 warnings.filterwarnings('ignore')
 # Helper function for effect magnitude (standalone)
@@ -3329,3 +3382,18 @@ def main():
         
         The corrected version provides more accurate statistical interpretations and better clinical guidance!
         """)
+        progress_bar.empty()
+    status_text.empty()
+
+# 12. SIMPLIFIED MAIN EXECUTION:
+if __name__ == "__main__":
+    # Ensure clean startup
+    st.set_page_config(
+        page_title="Mental Health\n Omics Analysis",
+        page_icon="🧬",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Run main app
+    main()
