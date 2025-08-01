@@ -16,12 +16,9 @@ import time
 from flask import Flask
 def create_app():
     app = Flask(__name__)
-
-    @app.route("/")
-    def home():
-        return "<h1>MentalHealth: Lasting Change!</h1>"
-
-
+ @app.route("/")
+def home():
+    return "MentalHealth:Lasting Change"
 warnings.filterwarnings('ignore')
 # Helper function for effect magnitude (standalone)
 def get_effect_magnitude(cohen_d):
