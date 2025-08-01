@@ -1,5 +1,6 @@
 import dj_database_url
 import streamlit as st
+import os  # ← Add this import!
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -36,7 +37,9 @@ PORT = safe_int_conversion(os.environ.get('PORT'), 8501)
 DEBUG_MODE = str_to_bool(os.environ.get('DEBUG', 'false'))
 
 # Your app starts here
+# Your app starts here
 st.title("LastingChange App")
+st.write("Welcome to your application!")
 
 if DEBUG_MODE:
     st.write(f"Running on port: {PORT}")
