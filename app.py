@@ -14,11 +14,9 @@ import io
 from datetime import datetime
 import time
 from flask import Flask
-def create_app():
-    app = Flask(__name__)
- @app.route("/")
-def home():
-    return "MentalHealth:Lasting Change"
+def main():
+    st.title("Menthal Health App")
+    st.write("Lasting Change")
 warnings.filterwarnings('ignore')
 # Helper function for effect magnitude (standalone)
 def get_effect_magnitude(cohen_d):
@@ -3301,8 +3299,5 @@ def main():
         
         The corrected version provides more accurate statistical interpretations and better clinical guidance!
         """)
-
-app = create_app()
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    main()
