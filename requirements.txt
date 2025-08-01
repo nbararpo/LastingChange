@@ -8,4 +8,5 @@ seaborn
 scipy
 plotly
 streamlit
+Flask==2.3.2
 
