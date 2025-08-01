@@ -14,10 +14,25 @@ import io
 from datetime import datetime
 import time
 from flask import Flask
-app = Flask(__name__)
-def main():
-    st.title("Menthal Health App")
-    st.write("Lasting Change")
+
+# Convert environment variables to proper types
+# Handle environment variables at module level (if needed)
+def str_to_bool(value):
+    return str(value).lower() in ('true', '1', 'yes', 'on')
+
+# These run once when the module loads
+PORT = int(os.environ.get('PORT', '8501'))
+DEBUG_MODE = str_to_bool(os.environ.get('DEBUG', 'false'))
+
+# Your app starts here
+st.title("LastingChange App")
+
+if DEBUG_MODE:
+    st.write(f"Running on port: {PORT}")
+
+# Rest of your app logic...
+st.write("Welcome to your app!")
+
 warnings.filterwarnings('ignore')
 # Helper function for effect magnitude (standalone)
 def get_effect_magnitude(cohen_d):
@@ -3300,7 +3315,3 @@ def main():
         
         The corrected version provides more accurate statistical interpretations and better clinical guidance!
         """)
-if __name__ == '__main__':
-    import os
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
