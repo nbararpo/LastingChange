@@ -14,13 +14,19 @@ import io
 from datetime import datetime
 import time
 from flask import Flask
-
 def create_app():
     app = Flask(__name__)
-    # setup app, routes, config, etc.
+
+    @app.route("/")
+    def home():
+        return "MentalApp!"
+
     return app
 
-app = create_app()  
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(debug=True)
 
 warnings.filterwarnings('ignore')
 
