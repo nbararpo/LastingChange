@@ -76,7 +76,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # Custom CSS for better styling
 st.markdown("""
 <style>
@@ -136,89 +135,8 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-# ✅ ADD THIS FUNCTION HERE (after imports and helper functions, before your main class)
-def ensure_analyzer_exists():
-    """Ensure analyzer exists and is properly initialized"""
-    try:
-        # Check if analyzer exists and is not None
-        if ('analyzer' not in st.session_state or 
-            st.session_state.analyzer is None or
-            not hasattr(st.session_state.analyzer, 'load_data')):
-            
-            # Try to create the full analyzer
-            st.session_state.analyzer = EnhancedOmicsAnalyzer()
-            
-            # Verify it was created successfully
-            if st.session_state.analyzer is None:
-                raise Exception("EnhancedOmicsAnalyzer creation returned None")
-                
-    except Exception as e:
-        st.warning(f"⚠️ Using simplified analyzer due to: {str(e)}")
-        
-        # Fallback to a simple working analyzer
-        class SimpleAnalyzer:
-            def __init__(self):
-                self.omics_data = None
-                self.demographics_data = None
-                self.merged_data = None
-                self.protein_cols = []
-                self.demographic_cols = []
-                self.timepoints = []
-                self.sex_col = None
-                self.age_col = None
-            
-            def load_data(self, omics_file, demographics_file):
-                try:
-                    # Load omics data
-                    if omics_file.name.endswith('.csv'):
-                        self.omics_data = pd.read_csv(omics_file)
-                    else:
-                        self.omics_data = pd.read_excel(omics_file)
-                    
-                    # Load demographics data
-                    if demographics_file.name.endswith('.csv'):
-                        self.demographics_data = pd.read_csv(demographics_file)
-                    else:
-                        self.demographics_data = pd.read_excel(demographics_file)
-                    
-                    # Basic setup
-                    self.protein_cols = list(self.omics_data.columns[2:])
-                    self.timepoints = sorted(self.omics_data.iloc[:, 1].unique())
-                    
-                    # Simple merge
-                    self.merged_data = pd.merge(
-                        self.omics_data, 
-                        self.demographics_data,
-                        left_on=self.omics_data.columns[0],
-                        right_on=self.demographics_data.columns[0],
-                        how='left'
-                    )
-                    
-                    return True, f"Data loaded successfully! {len(self.protein_cols)} proteins, {len(self.timepoints)} timepoints"
-                    
-                except Exception as e:
-                    return False, f"Error loading data: {str(e)}"
-            
-            def get_data_summary(self):
-                """Basic data summary"""
-                if self.merged_data is None:
-                    return None
-                
-                return {
-                    'omics': {
-                        'n_samples': len(self.omics_data),
-                        'n_participants': self.omics_data.iloc[:, 0].nunique(),
-                        'n_biomarkers': len(self.protein_cols),
-                        'timepoints': self.timepoints,
-                        'n_timepoints': len(self.timepoints)
-                    },
-                    'merged': {
-                        'n_samples': len(self.merged_data),
-                        'completeness_rate': 95.0
-                    }
-                }
-        
-        st.session_state.analyzer = SimpleAnalyzer()
+
+
 class EnhancedOmicsAnalyzer:
     """Enhanced Omics Data Analyzer for  App"""
     
@@ -1547,13 +1465,20 @@ class EnhancedOmicsAnalyzer:
             'across_total': len(across_significant),
             'overlap': len(both)
         }
-def main():
-    # Initialize session state
-    if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = EnhancedOmicsAnalyzer()
+    def main():
+    # ✅ REPLACE your existing session state initialization with this:
+    ensure_analyzer_exists()
+    
+    # Initialize other session state
     if 'data_loaded' not in st.session_state:
         st.session_state.data_loaded = False
+    if 'significant_results' not in st.session_state:
+        st.session_state.significant_results = None
     
+    # ✅ Verify analyzer is working
+    if st.session_state.analyzer is None:
+        st.error("❌ Failed to initialize analyzer. Please refresh the page.")
+        st.stop()
     # Main header
     st.markdown('<h1 class="main-header">🧬 Enhanced Omics Data Analysis Platform</h1>', unsafe_allow_html=True)
     
