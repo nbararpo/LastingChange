@@ -15,7 +15,11 @@ import io
 from datetime import datetime
 import time
 from flask import Flask
-
+st.set_page_config(
+    page_title="LastingChange App",
+    page_icon="🎉",
+    layout="wide",
+)
 # Quick fixes to apply to your current app.py
 
 # 1. REMOVE these imports at the top:
@@ -34,21 +38,7 @@ if 'analyzer' not in st.session_state:
     st.session_state.analyzer = None
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
-# Add this after imports
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def load_and_process_data(omics_file, demographics_file):
-    """Cached data loading to reduce memory usage"""
-    # Your existing data loading logic here
-    pass
-
-# 4. OPTIMIZE the main function:
-def main():
-    # Clear memory periodically
-    if st.button("🧹 Clear Memory Cache"):
-        st.cache_data.clear()
-        gc.collect()
-        st.success("Memory cleared!")
-    
+ 
     # Your existing main() code here...
     # But consider limiting analysis to smaller datasets initially
 
@@ -3385,18 +3375,6 @@ def main():
         
         The corrected version provides more accurate statistical interpretations and better clinical guidance!
         """)
-        progress_bar.empty()
-    status_text.empty()
-
-# 12. SIMPLIFIED MAIN EXECUTION:
+# Run the app
 if __name__ == "__main__":
-    # Ensure clean startup
-    st.set_page_config(
-        page_title="Mental Health\n Omics Analysis",
-        page_icon="🧬",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # Run main app
     main()
