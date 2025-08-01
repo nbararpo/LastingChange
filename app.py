@@ -21,7 +21,18 @@ def str_to_bool(value):
     return str(value).lower() in ('true', '1', 'yes', 'on')
 
 # These run once when the module loads
-PORT = int(os.environ.get('PORT', '8501'))
+# ✅ Safe conversion with error handling
+def safe_int_conversion(value, default=8501):
+    """Safely convert string to integer"""
+    try:
+        if value is None:
+            return default
+        # Strip whitespace and convert
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return default
+
+PORT = safe_int_conversion(os.environ.get('PORT'), 8501)
 DEBUG_MODE = str_to_bool(os.environ.get('DEBUG', 'false'))
 
 # Your app starts here
