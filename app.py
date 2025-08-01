@@ -19,17 +19,13 @@ def create_app():
 
     @app.route("/")
     def home():
-        return "MentalApp!"
-
+        return "MentalHealth: Lasting Change!"
     return app
-
 app = create_app()
-
 if __name__ == "__main__":
     app.run(debug=True)
 
 warnings.filterwarnings('ignore')
-
 # Helper function for effect magnitude (standalone)
 def get_effect_magnitude(cohen_d):
     """Convert Cohen's d to magnitude category"""
