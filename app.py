@@ -13,7 +13,14 @@ import warnings
 import io
 from datetime import datetime
 import time
+from flask import Flask
 
+def create_app():
+    app = Flask(__name__)
+    # setup app, routes, config, etc.
+    return app
+
+app = create_app() 
 warnings.filterwarnings('ignore')
 
 # Helper function for effect magnitude (standalone)
