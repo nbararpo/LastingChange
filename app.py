@@ -29,6 +29,11 @@ from flask import Flask
 import gc
 import streamlit as st
 
+# Add this RIGHT after imports
+if 'analyzer' not in st.session_state:
+    st.session_state.analyzer = None
+if 'data_loaded' not in st.session_state:
+    st.session_state.data_loaded = False
 # Add this after imports
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_and_process_data(omics_file, demographics_file):
@@ -60,9 +65,7 @@ def safe_analysis_wrapper(analysis_func, *args, **kwargs):
         return None
 
 # 6. LIMIT data processing in tabs:
-# In each tab, add checks like:
-if len(st.session_state.analyzer.protein_cols) > 100:
-    st.warning("⚠️ Large dataset detected. Some analyses may be slow.")
+
     
     # Option to analyze subset
     analyze_subset = st.checkbox("Analyze first 50 proteins only (faster)")
