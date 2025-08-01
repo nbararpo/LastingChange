@@ -219,19 +219,6 @@ def ensure_analyzer_exists():
                 }
         
         st.session_state.analyzer = SimpleAnalyzer()
-
-def main():
-    # ✅ ROBUST initialization
-    ensure_analyzer_exists()
-    
-    # Initialize other session state
-    if 'data_loaded' not in st.session_state:
-        st.session_state.data_loaded = False
-    
-    # ✅ Verify analyzer is working
-    if st.session_state.analyzer is None:
-        st.error("❌ Failed to initialize analyzer. Please refresh the page.")
-        st.stop()
 class EnhancedOmicsAnalyzer:
     """Enhanced Omics Data Analyzer for  App"""
     
@@ -1560,26 +1547,13 @@ class EnhancedOmicsAnalyzer:
             'across_total': len(across_significant),
             'overlap': len(both)
         }
-    # Initialize session state
-    if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = EnhancedOmicsAnalyzer()
-    if 'data_loaded' not in st.session_state:
-        st.session_state.data_loaded = False
-# Main header
-    st.markdown('<h1 class="main-header">🧬 Enhanced Omics Data Analysis Platform</h1>', unsafe_allow_html=True)
-     # Sidebar with SAFE data loading
-    with st.sidebar:
-        st.header("📁 Data Upload")
-        
-        omics_file = st.file_uploader("Upload Omics Data", type=['csv', 'xlsx'])
-        demographics_file = st.file_uploader("Upload Demographics Data", type=['csv', 'xlsx'])
-        
-        if st.button("🚀 Load Data", type="primary"):
+#def main():
+    if st.button("🚀 Load Data", type="primary"):
             if omics_file and demographics_file:
                 # ✅ SAFE loading with error handling
                 ensure_analyzer_exists()  # Double-check analyzer exists
                 
-                with st.spinner("Loading data..."):
+                with st.spinner("Loading and processing data..."):
                     try:
                         success, message = st.session_state.analyzer.load_data(omics_file, demographics_file)
                         if success:
@@ -1593,8 +1567,7 @@ class EnhancedOmicsAnalyzer:
                         st.session_state.analyzer = None
                         ensure_analyzer_exists()
             else:
-                st.warning("Please upload both files.")
-   
+                st.warning("Please upload both omics and demographics files.")
     # Main content with tabs
     if st.session_state.data_loaded:
         tab1, tab2, tab3, tab4 = st.tabs([
