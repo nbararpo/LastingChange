@@ -1,0 +1,16 @@
+# Exported from Render on 2025-08-01T06:38:39Z
+services:
+- type: web
+  name: app-docker
+  runtime: python
+  repo: https://github.com/nbararpo/LastingChange
+  plan: starter
+  envVars:
+  - key: App_URL
+    sync: false
+  region: oregon
+  buildCommand: pip install -r requirements.txt
+  startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+    --server.headless=true
+  autoDeployTrigger: commit
+version: "1"
