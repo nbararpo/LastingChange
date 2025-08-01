@@ -42,31 +42,6 @@ if 'data_loaded' not in st.session_state:
     # Your existing main() code here...
     # But consider limiting analysis to smaller datasets initially
 
-# 5. ADD error handling around computationally intensive functions:
-def safe_analysis_wrapper(analysis_func, *args, **kwargs):
-    """Wrapper to handle memory/timeout errors"""
-    try:
-        return analysis_func(*args, **kwargs)
-    except MemoryError:
-        st.error("Analysis requires too much memory. Try with a smaller dataset.")
-        return None
-    except Exception as e:
-        st.error(f"Analysis failed: {str(e)}")
-        return None
-
-# 6. LIMIT data processing in tabs:
-
-    
-    # Option to analyze subset
-    analyze_subset = st.checkbox("Analyze first 50 proteins only (faster)")
-    if analyze_subset:
-        # Limit protein analysis
-        proteins_to_analyze = st.session_state.analyzer.protein_cols[:50]
-    else:
-        proteins_to_analyze = st.session_state.analyzer.protein_cols
-else:
-    proteins_to_analyze = st.session_state.analyzer.protein_cols
-
 # 7. OPTIMIZE requirements.txt:
 
 # 8. CREATE a simpler version for initial deployment:
@@ -82,17 +57,6 @@ else:
 
 # 10. DEPLOYMENT START COMMAND:
 # streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --server.maxUploadSize=200
-
-# 11. ADD progress bars for long operations:
-def long_analysis_with_progress():
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for i in range(100):
-        # Update progress
-        progress_bar.progress(i + 1)
-        status_text.text(f'Progress: {i+1}%')
-
 warnings.filterwarnings('ignore')
 # Helper function for effect magnitude (standalone)
 def get_effect_magnitude(cohen_d):
