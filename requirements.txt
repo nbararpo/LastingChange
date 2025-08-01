@@ -1,3 +1,16 @@
 flask==2.3.2
 gunicorn==20.1.0
 dj-database-url==1.0.0
+pandas
+numpy 
+ matplotlib.pyplot 
+ seaborn 
+ scipy 
+scipy.stats
+plotly.express 
+plotly.graph_objects 
+plotly.subplots 
+ warnings
+ io
+datetime 
+time
