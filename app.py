@@ -76,65 +76,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    
-    .tab-header {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #2e8b57;
-        margin-bottom: 1rem;
-    }
-    
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #1f77b4;
-    }
-    
-    .success-message {
-        color: #28a745;
-        font-weight: bold;
-    }
-    
-    .warning-message {
-        color: #ffc107;
-        font-weight: bold;
-    }
-    
-    .analysis-column {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-    }
-    
-    .significance-box {
-        background-color: #e8f5e8;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #28a745;
-        margin: 0.5rem 0;
-    }
-    
-    .persistence-box {
-        background-color: #e8f4fd;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #007bff;
-        margin: 0.5rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 #  ROBUST session state management
 def ensure_analyzer_exists():
@@ -219,6 +160,65 @@ def ensure_analyzer_exists():
                 }
         
         st.session_state.analyzer = SimpleAnalyzer()
+        # Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
+    .tab-header {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #2e8b57;
+        margin-bottom: 1rem;
+    }
+    
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #1f77b4;
+    }
+    
+    .success-message {
+        color: #28a745;
+        font-weight: bold;
+    }
+    
+    .warning-message {
+        color: #ffc107;
+        font-weight: bold;
+    }
+    
+    .analysis-column {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 10px;
+        margin: 0.5rem 0;
+    }
+    
+    .significance-box {
+        background-color: #e8f5e8;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #28a745;
+        margin: 0.5rem 0;
+    }
+    
+    .persistence-box {
+        background-color: #e8f4fd;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #007bff;
+        margin: 0.5rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
 class EnhancedOmicsAnalyzer:
     """Enhanced Omics Data Analyzer for  App"""
     
@@ -1547,8 +1547,40 @@ class EnhancedOmicsAnalyzer:
             'across_total': len(across_significant),
             'overlap': len(both)
         }
-#def main():
-    if st.button("🚀 Load Data", type="primary"):
+def main():
+    # ✅ REPLACE your existing session state initialization with this:
+    ensure_analyzer_exists()
+    
+    # Initialize other session state
+    if 'data_loaded' not in st.session_state:
+        st.session_state.data_loaded = False
+    if 'significant_results' not in st.session_state:
+        st.session_state.significant_results = None
+    
+    # ✅ Verify analyzer is working
+    if st.session_state.analyzer is None:
+        st.error("❌ Failed to initialize analyzer. Please refresh the page.")
+        st.stop()
+    # Main header
+    st.markdown('<h1 class="main-header">🧬 Enhanced Omics Data Analysis Platform</h1>', unsafe_allow_html=True)
+    # Sidebar for file uploads
+    with st.sidebar:
+        st.header("📁 Data Upload")
+        
+        # File uploads
+        omics_file = st.file_uploader(
+            "Upload Omics Data",
+            type=['csv', 'xlsx'],
+            help="CSV or Excel file with ID (1st column), Timepoint (2nd column), and biomarkers"
+        )
+        
+        demographics_file = st.file_uploader(
+            "Upload Demographics Data", 
+            type=['csv', 'xlsx'],
+            help="CSV/Excel: Col 1=ID, Col 4=sex, Col 5=age, Col 6-11=timepoints 1-6"
+        )
+        
+if st.button("🚀 Load Data", type="primary"):
             if omics_file and demographics_file:
                 # ✅ SAFE loading with error handling
                 ensure_analyzer_exists()  # Double-check analyzer exists
