@@ -19,11 +19,8 @@ def create_app():
 
     @app.route("/")
     def home():
-        return "MentalHealth: Lasting Change!"
-    return app
-app = create_app()
-if __name__ == "__main__":
-    app.run(debug=True)
+        return "<h1>MentalHealth: Lasting Change!</h1>"
+
 
 warnings.filterwarnings('ignore')
 # Helper function for effect magnitude (standalone)
@@ -3308,5 +3305,7 @@ def main():
         The corrected version provides more accurate statistical interpretations and better clinical guidance!
         """)
 
+app = create_app()
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True)
