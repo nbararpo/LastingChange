@@ -1,0 +1,3302 @@
+---
+title: "lastingChange_traj"
+author: "Nasim Bararpour"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Category Data
+```{r}
+full_data<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/fullData.csv")
+
+
+dx, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Q2_proteins_FinalGeneID.csv")
+
+colnames(full_data)
+```
+# Long fromat data 
+```{r}
+library(dplyr)
+library(tidyr)
+ 
+# ============================================
+# STEP 1: PREPARE DATA WITH ALL COLUMNS
+# ============================================
+
+cat("=== Preparing aggregated dataset ===\n")
+
+# Assuming your data structure is:
+# dex columns: [other columns] | code (ID) | Time | Value (burnout) | sex | age | Protein1 | Protein2 | ... | Protein5400
+
+# Extract components
+meta_cols <- full_data[, c("code", "sex", "age", "Time", "Value","burnout", "time_numeric" )]  # Adjust column names as needed
+protein_cols <- Ex  # Proteins columns use EX
+
+# Combine
+full_data <- cbind(meta_cols, protein_cols)
+
+write.csv(full_data, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/full_dataExOriginal.csv")
+
+
+# Rename for clarity
+colnames(full_data)[c(1,4,6)] <- c("ID", "Timepoint", "Burnout")
+
+
+cat("Original data dimensions:", dim(full_data), "\n")
+cat("Columns: ID, Timepoint, Burnout, sex, age, +", ncol(protein_cols), "proteins\n\n")
+```
+
+# ============================================
+# STEP 2: AGGREGATE BY ID AND TIMEPOINT
+# ============================================
+
+```{r}
+# ============================================
+# SIMPLEST AGGREGATION APPROACH
+# ============================================
+
+# Specify your columns explicitly
+data_to_aggregate <- data.frame(
+  ID = full_data$ID,
+  Timepoint = full_data$Timepoint,
+  Burnout = full_data$Burnout,
+  sex = full_data$sex,
+  age = full_data$age,
+  Ex  # All protein columns
+)
+
+# Aggregate using aggregate() function
+library(dplyr)
+
+aggregated <- data_to_aggregate %>%
+  group_by(ID, Timepoint) %>%
+  summarise(
+    Burnout = mean(Burnout, na.rm = TRUE),
+    sex = first(sex),
+    age = mean(age, na.rm = TRUE),
+    across(where(is.numeric) & !any_of(c("Burnout", "age")), ~mean(.x, na.rm = TRUE)),
+    .groups = 'drop'
+  )
+
+write.csv(aggregated, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Aggregated_Simple.csv", row.names = FALSE)
+cat("Saved: Aggregated_Simple.csv\n")
+cat("Dimensions:", dim(aggregated), "\n")
+
+aggregated_data<-aggregated
+```
+
+
+# ============================================
+# STEP 3: VERIFY AGGREGATION
+# ============================================
+
+```{r}
+cat("=== Verification ===\n")
+
+# Check observations per ID
+obs_per_id <- table(table(aggregated_data$ID))
+cat("Observations per ID:\n")
+print(obs_per_id)
+cat("\n")
+
+# Check timepoints
+cat("Timepoints present:\n")
+print(table(aggregated_data$Timepoint))
+cat("\n")
+
+# Sample of aggregated data
+cat("Sample of aggregated data (first 5 rows, first 8 columns):\n")
+print(head(aggregated_data[, 1:min(8, ncol(aggregated_data))], 5))
+cat("\n")
+
+# ============================================
+# STEP 4: SAVE AGGREGATED DATASET
+# ============================================
+
+# Save complete aggregated data
+write.csv(aggregated_data, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Aggregated_Data_by_ID_Timepoint.csv", row.names = FALSE)
+cat("Saved: Aggregated_Data_by_ID_Timepoint.csv\n\n")
+```
+
+
+# ============================================
+# STEP 5: CREATE SUMMARY STATISTICS
+# ============================================
+```{r}
+cat("=== Summary Statistics ===\n")
+
+# Summary by timepoint
+summary_by_timepoint <- aggregated_data %>%
+  group_by(Timepoint) %>%
+  summarise(
+    n_subjects = n(),
+    mean_burnout = mean(Burnout, na.rm = TRUE),
+    sd_burnout = sd(Burnout, na.rm = TRUE),
+    min_burnout = min(Burnout, na.rm = TRUE),
+    max_burnout = max(Burnout, na.rm = TRUE)
+  )
+
+cat("Summary by Timepoint:\n")
+print(summary_by_timepoint)
+cat("\n")
+
+write.csv(summary_by_timepoint, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Summary_by_Timepoint.csv", row.names = FALSE)
+
+# Summary by ID
+summary_by_id <- aggregated_data %>%
+  group_by(ID) %>%
+  summarise(
+    n_timepoints = n(),
+    mean_burnout = mean(Burnout, na.rm = TRUE),
+    sd_burnout = sd(Burnout, na.rm = TRUE),
+    burnout_change = last(Burnout) - first(Burnout),  # T6 - T1
+    sex = first(sex),
+    age = first(age)
+  )
+
+cat("Summary by ID (first 10):\n")
+print(head(summary_by_id, 10))
+cat("\n")
+
+write.csv(summary_by_id, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Summary_by_ID.csv", row.names = FALSE)
+
+# ============================================
+# STEP 6: CREATE WIDE FORMAT (ONE ROW PER ID)
+# ============================================
+
+cat("=== Creating wide format (one row per ID) ===\n")
+
+library(tidyverse)
+
+# Pivot to wide format: one row per ID, columns for each timepoint
+wide_data <- aggregated_data %>%
+  pivot_wider(
+    id_cols = c(ID, sex, age),
+    names_from = Timepoint,
+    values_from = c(Burnout, all_of(colnames(protein_cols))),
+    names_sep = "_"
+  )
+
+cat("Wide format dimensions:", dim(wide_data), "\n")
+cat("Columns: ID, sex, age, + Burnout_T1-T6 + each protein at T1-T6\n\n")
+
+write.csv(wide_data, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wide_Format_by_ID.csv", row.names = FALSE)
+cat("Saved: Wide_Format_by_ID.csv\n\n")
+
+# ============================================
+# STEP 7: EXTRACT SPECIFIC FORMATS FOR ANALYSIS
+# ============================================
+
+# Format 1: Long format with only ID, Timepoint, Burnout, Proteins
+long_format_simple <- aggregated_data %>%
+  select(ID, Timepoint, Burnout, all_of(colnames(protein_cols)))
+
+write.csv(long_format_simple, "Long_Format_Simple.csv", row.names = FALSE)
+cat("Saved: Long_Format_Simple.csv\n")
+cat("  Format: ID | Timepoint | Burnout | Protein1 | ... | Protein5400\n\n")
+
+# Format 2: Matrix format for proteins only (for correlation analysis)
+protein_matrix <- as.matrix(aggregated_data[, colnames(protein_cols)])
+rownames(protein_matrix) <- paste(aggregated_data$ID, 
+                                  aggregated_data$Timepoint, 
+                                  sep = "_")
+write.csv(protein_matrix, "Protein_Matrix_Averaged.csv", row.names = TRUE)
+cat("Saved: Protein_Matrix_Averaged.csv\n")
+cat("  Format: Rows = ID_Timepoint, Columns = Proteins\n\n")
+
+# ============================================
+# STEP 8: VISUALIZE AGGREGATION RESULTS
+# ============================================
+
+library(ggplot2)
+
+# Plot 1: Burnout across timepoints
+p1 <- ggplot(aggregated_data, aes(x = Timepoint, y = Burnout)) +
+  geom_boxplot(fill = "lightblue", alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.3, size = 0.8) +
+  stat_summary(fun = mean, geom = "point", 
+               shape = 23, size = 3, fill = "red") +
+  theme_minimal() +
+  labs(
+    title = "Burnout Distribution Across Timepoints (Aggregated Data)",
+    subtitle = "Red diamonds = mean",
+    x = "Timepoint",
+    y = "Burnout Score"
+  )
+
+print(p1)
+ggsave("Burnout_by_Timepoint_Aggregated.png", p1, width = 10, height = 6, dpi = 300)
+
+# Plot 2: Individual trajectories
+p2 <- ggplot(aggregated_data, aes(x = Timepoint, y = Burnout, group = ID)) +
+  geom_line(alpha = 0.3, color = "gray50") +
+  geom_point(alpha = 0.4, size = 1) +
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "red", linewidth = 1.5) +
+  stat_summary(aes(group = 1), fun = mean, geom = "point", 
+               color = "red", size = 3) +
+  theme_minimal() +
+  labs(
+    title = "Individual Burnout Trajectories (Aggregated Data)",
+    subtitle = "Red line = mean trajectory",
+    x = "Timepoint",
+    y = "Burnout Score"
+  )
+
+print(p2)
+ggsave("Individual_Trajectories_Aggregated.png", p2, width = 10, height = 6, dpi = 300)
+
+# Plot 3: Sample size at each timepoint
+sample_size_plot <- ggplot(summary_by_timepoint, 
+                           aes(x = Timepoint, y = n_subjects)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
+  geom_text(aes(label = n_subjects), vjust = -0.5, size = 5, fontface = "bold") +
+  theme_minimal() +
+  labs(
+    title = "Sample Size at Each Timepoint",
+    x = "Timepoint",
+    y = "Number of Subjects"
+  ) +
+  ylim(0, max(summary_by_timepoint$n_subjects) * 1.15)
+
+print(sample_size_plot)
+ggsave("Sample_Size_by_Timepoint.png", sample_size_plot, 
+       width = 8, height = 6, dpi = 300)
+
+# ============================================
+# STEP 9: CHECK FOR DUPLICATES/ISSUES
+# ============================================
+
+cat("=== Quality Checks ===\n")
+
+# Check for duplicate ID-Timepoint combinations
+duplicates <- aggregated_data %>%
+  group_by(ID, Timepoint) %>%
+  filter(n() > 1)
+
+if(nrow(duplicates) > 0) {
+  cat("WARNING: Found", nrow(duplicates), "duplicate ID-Timepoint combinations!\n")
+  print(head(duplicates))
+} else {
+  cat("✓ No duplicate ID-Timepoint combinations\n")
+}
+
+# Check for missing values in key columns
+missing_burnout <- sum(is.na(aggregated_data$Burnout))
+missing_proteins <- sum(is.na(aggregated_data[, colnames(protein_cols)]))
+
+cat("Missing values:\n")
+cat("  Burnout:", missing_burnout, "\n")
+cat("  Proteins:", missing_proteins, "total (", 
+    round(missing_proteins / (nrow(aggregated_data) * ncol(protein_cols)) * 100, 2), 
+    "%)\n\n")
+
+# ============================================
+# STEP 10: CREATE METADATA FILE
+# ============================================
+
+metadata_aggregated <- aggregated_data %>%
+  select(ID, Timepoint, Burnout, sex, age, n_obs)
+
+write.csv(metadata_aggregated, "Metadata_Aggregated.csv", row.names = FALSE)
+cat("Saved: Metadata_Aggregated.csv\n")
+
+# ============================================
+# SUMMARY REPORT
+# ============================================
+
+cat("\n========================================\n")
+cat("AGGREGATION COMPLETE\n")
+cat("========================================\n\n")
+
+cat("FILES CREATED:\n")
+cat("1. Aggregated_Data_by_ID_Timepoint.csv\n")
+cat("   - Long format: ID | Timepoint | Burnout | Proteins (averaged)\n")
+cat("   - Dimensions:", dim(aggregated_data), "\n\n")
+
+cat("2. Wide_Format_by_ID.csv\n")
+cat("   - Wide format: One row per ID, columns for each timepoint\n")
+cat("   - Dimensions:", dim(wide_data), "\n\n")
+
+cat("3. Long_Format_Simple.csv\n")
+cat("   - Simplified: ID | Timepoint | Burnout | Proteins only\n\n")
+
+cat("4. Protein_Matrix_Averaged.csv\n")
+cat("   - Matrix format: Rows = ID_Timepoint, Columns = Proteins\n\n")
+
+cat("5. Summary files:\n")
+cat("   - Summary_by_Timepoint.csv\n")
+cat("   - Summary_by_ID.csv\n")
+cat("   - Metadata_Aggregated.csv\n\n")
+
+cat("6. Visualizations:\n")
+cat("   - Burnout_by_Timepoint_Aggregated.png\n")
+cat("   - Individual_Trajectories_Aggregated.png\n")
+cat("   - Sample_Size_by_Timepoint.png\n\n")
+
+cat("========================================\n\n")
+```
+
+```{r}
+pcomb<- p1|p2|sample_size_plot
+print(pcomb)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/pcombTraj.png", pcomb, 
+       width = 10, height = 5, dpi = 300)
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/pcombTraj.pdf", pcomb, 
+       width = 10, height = 5, dpi = 300)
+```
+
+4-category analysis on aggregated data
+# ============================================
+# STEP 1: CALCULATE WITHIN-SUBJECT CHANGES
+# ============================================
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(lme4)
+library(lmerTest)
+library(tidyr)
+
+# ============================================
+# STEP 1: CALCULATE WITHIN-SUBJECT CHANGES
+# ============================================
+
+cat("=== Calculating Within-Subject Changes ===\n\n")
+
+# Assuming 'result' is your aggregated data from previous step
+# If you named it differently, adjust accordingly
+aggregated_data<-read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Aggregated_Data_by_ID_Timepoint.csv")
+```
+
+```{r}
+# Calculate mean for each timepoint
+means_by_timepoint <- aggregated_data %>%
+  group_by(Timepoint) %>%
+  summarise(
+    n_subjects = n(),
+    mean_burnout = mean(Burnout, na.rm = TRUE),
+    across(all_of(protein_cols), ~mean(.x, na.rm = TRUE))
+  ) %>%
+  arrange(Timepoint)
+
+cat("Mean values calculated for each timepoint:\n")
+print(means_by_timepoint[, 1:8])  # Show first few columns
+cat("\n")
+
+# Save means
+write.csv(means_by_timepoint, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Mean_Values_by_Timepoint.csv", row.names = FALSE)
+```
+
+
+# ============================================
+# STEP 2: ANALYZE BURNOUT TRAJECTORY
+# ============================================
+
+```{r}
+library(tidyverse)
+means_by_timepoint<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Mean_Values_by_Timepoint.csv")
+
+
+cat("=== Analyzing Burnout Trajectory ===\n\n")
+
+# Get burnout trajectory
+burnout_trajectory <- means_by_timepoint %>%
+  select(Timepoint, mean_burnout) %>%
+  arrange(Timepoint)
+
+cat("Burnout trajectory (T1 to T6):\n")
+print(burnout_trajectory)
+cat("\n")
+
+# Calculate burnout change from T1 to T6
+burnout_t1 <- burnout_trajectory$mean_burnout[burnout_trajectory$Timepoint == "C1"]
+burnout_t3 <- burnout_trajectory$mean_burnout[burnout_trajectory$Timepoint == "C3"]
+burnout_t6 <- burnout_trajectory$mean_burnout[burnout_trajectory$Timepoint == "C6"]
+
+burnout_overall_change <-burnout_t6 - burnout_t1
+
+cat("Burnout T1:", round(burnout_t1, 3), "\n")
+cat("Burnout T3:", round(burnout_t3, 3), "\n")
+cat("Burnout T6:", round(burnout_t6, 3), "\n")
+cat("Overall change (T6-T1):", round(burnout_overall_change, 3), "\n")
+cat("Direction:", ifelse(burnout_overall_change > 0, "INCREASING", "DECREASING"), "\n\n")
+```
+
+
+# ============================================
+# STEP 3: ANALYZE PROTEIN TRAJECTORIES
+# ============================================
+```{r}
+# ============================================
+# STEP 3: ANALYZE PROTEIN TRAJECTORIES
+# ============================================
+
+cat("=== Analyzing Protein Trajectories ===\n\n")
+
+# Function to categorize one protein based on trajectory
+categorize_protein_trajectory <- function(protein_name, means_by_timepoint, burnout_trajectory) {
+  
+  # Get protein trajectory
+  protein_values <- means_by_timepoint[[protein_name]]
+  timepoints <- means_by_timepoint$Timepoint
+  
+  # Get T1 and T6 values
+  protein_t1 <- protein_values[timepoints == "C1"]
+ # protein_t2 <- protein_values[timepoints == "C2"]
+ # protein_t3 <- protein_values[timepoints == "C3"]
+  #protein_t4 <- protein_values[timepoints == "C4"]
+ # protein_t5 <- protein_values[timepoints == "C5"]
+  protein_t6 <- protein_values[timepoints == "C6"]
+  
+  # Calculate change if it is lasting 
+  protein_change <- protein_t6 - protein_t1
+  
+  # Calculate correlation with burnout
+  cor_result <- cor.test(burnout_trajectory$mean_burnout, protein_values)
+  correlation <- cor_result$estimate
+  cor_pvalue <- cor_result$p.value
+  
+  # Linear trend test
+  time_numeric <- 1:length(timepoints)
+  lm_protein <- lm(protein_values ~ time_numeric)
+  protein_slope <- coef(lm_protein)[2]
+  protein_trend_p <- summary(lm_protein)$coefficients[2, 4]
+  
+  lm_burnout <- lm(burnout_trajectory$mean_burnout ~ time_numeric)
+  burnout_slope <- coef(lm_burnout)[2]
+  
+  # Determine category based on trajectories
+  category <- "No clear pattern"
+  
+  # Check if changes are significant (using arbitrary but reasonable thresholds)
+  protein_change_pct <- abs(protein_change) / abs(protein_t1) * 100
+  
+  if(protein_trend_p < 0.05) {  # Protein has significant trend
+    
+    if(protein_slope > 0 && burnout_slope > 0) {
+      # Both increasing
+      category <- "Cat1: Protein ↑ as Burnout ↑ (T1→T6)"
+      
+    } else if(protein_slope < 0 && burnout_slope < 0) {
+      # Both decreasing
+      category <- "Cat2: Protein ↓ as Burnout ↓ (T1→T6)"
+      
+    } else if(protein_slope < 0 && burnout_slope > 0) {
+      # Protein decreasing while burnout increasing
+      category <- "Cat3: Protein ↓ as Burnout ↑ (T1→T6)"
+      
+    } else if(protein_slope > 0 && burnout_slope < 0) {
+      # Protein increasing while burnout decreasing
+      category <- "Cat4: Protein ↑ as Burnout ↓ (T1→T6)"
+    }
+  }
+  
+  return(data.frame(
+    protein = protein_name,
+    protein_T1 = protein_t1,
+    #protein_T3 = protein_t3,
+    protein_T6 = protein_t6,
+    protein_change = protein_change,
+    protein_change_pct = protein_change_pct,
+    protein_slope = protein_slope,
+    protein_trend_p = protein_trend_p,
+    correlation_with_burnout = correlation,
+    cor_pvalue = cor_pvalue,
+    category = category,
+    stringsAsFactors = FALSE
+  ))
+}
+
+# Analyze all proteins
+cat("Analyzing trajectories for", length(protein_cols), "proteins...\n")
+
+trajectory_results <- data.frame()
+
+pb <- txtProgressBar(min = 0, max = length(protein_cols), style = 3)
+
+for(i in 1:length(protein_cols)) {
+  result_i <- categorize_protein_trajectory(protein_cols[i], 
+                                             means_by_timepoint, 
+                                             burnout_trajectory)
+  trajectory_results <- rbind(trajectory_results, result_i)
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+# Multiple testing correction
+trajectory_results$fdr_trend <- p.adjust(trajectory_results$protein_trend_p, method = "BH")
+trajectory_results$fdr_correlation <- p.adjust(trajectory_results$cor_pvalue, method = "BH")
+
+cat("\n\n")
+unique(trajectory_results$category)
+colnames(trajectory_results)
+write.csv(trajectory_results, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/trajectory_results.csv")
+```
+
+# ============================================
+# STEP 4: EXTRACT 4 CATEGORIES
+# ============================================
+```{r}
+trajectory_results<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/trajectory_results.csv")
+
+
+cat("=== Extracting 4 Categories ===\n\n")
+
+# Category 1: Protein increases as burnout increases
+cat1_traj <- trajectory_results[
+  trajectory_results$category == "Cat1: Protein ↑ as Burnout ↑ (T1→T6)" &
+  trajectory_results$cor_pvalue < 0.05, ]
+cat1_traj <- cat1_traj[order(-cat1_traj$protein_slope), ]
+
+cat("CATEGORY 1: Proteins INCREASE as Burnout INCREASES (T1→T6)\n")
+cat("Count:", nrow(cat1_traj), "\n")
+if(nrow(cat1_traj) > 0) {
+  cat("Top 10:\n")
+  print(cat1_traj[1:min(10, nrow(cat1_traj)), 
+                  c("protein", "protein_change", "protein_slope", "correlation_with_burnout", "protein_trend_p")])
+}
+cat("\n")
+
+# Category 2: Protein decreases as burnout decreases
+cat2_traj <- trajectory_results[
+  trajectory_results$category == "Cat2: Protein ↓ as Burnout ↓ (T1→T6)" &
+  trajectory_results$cor_pvalue < 0.05, ]
+cat2_traj <- cat2_traj[order(cat2_traj$protein_slope), ]
+
+cat("CATEGORY 2: Proteins DECREASE as Burnout DECREASES (T1→T6)\n")
+cat("Count:", nrow(cat2_traj), "\n")
+if(nrow(cat2_traj) > 0) {
+  cat("Top 10:\n")
+  print(cat2_traj[1:min(10, nrow(cat2_traj)), 
+                  c("protein", "protein_change", "protein_slope", "correlation_with_burnout", "protein_trend_p")])
+}
+cat("\n")
+
+# Category 3: Protein decreases as burnout increases
+cat3_traj <- trajectory_results[
+  trajectory_results$category == "Cat3: Protein ↓ as Burnout ↑ (T1→T6)" &
+  trajectory_results$cor_pvalue < 0.05, ]
+cat3_traj <- cat3_traj[order(cat3_traj$protein_slope), ]
+
+cat("CATEGORY 3: Proteins DECREASE as Burnout INCREASES (T1→T6)\n")
+cat("Count:", nrow(cat3_traj), "\n")
+if(nrow(cat3_traj) > 0) {
+  cat("Top 10:\n")
+  print(cat3_traj[1:min(10, nrow(cat3_traj)), 
+                  c("protein", "protein_change", "protein_slope", "correlation_with_burnout", "protein_trend_p")])
+}
+cat("\n")
+
+# Category 4: Protein increases as burnout decreases
+cat4_traj <- trajectory_results[
+  trajectory_results$category == "Cat4: Protein ↑ as Burnout ↓ (T1→T6)" &
+  trajectory_results$cor_pvalue < 0.05, ]
+cat4_traj <- cat4_traj[order(-cat4_traj$protein_slope), ]
+
+cat("CATEGORY 4: Proteins INCREASE as Burnout DECREASES (T1→T6)\n")
+cat("Count:", nrow(cat4_traj), "\n")
+if(nrow(cat4_traj) > 0) {
+  cat("Top 10:\n")
+  print(cat4_traj[1:min(10, nrow(cat4_traj)), 
+                  c("protein", "protein_change", "protein_slope", "correlation_with_burnout", "protein_trend_p")])
+}
+cat("\n")
+```
+
+# ============================================
+# STEP 5: SAVE RESULTS
+# ============================================
+
+```{r}
+# ============================================
+# STEP 5: SAVE RESULTS
+# ============================================
+
+write.csv(trajectory_results, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Trajectory_Analysis_All_Proteins.csv", row.names = FALSE)
+write.csv(cat1_traj, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/Cat1_Trajectory_Protein_UP_Burnout_UP.csv", row.names = FALSE)
+write.csv(cat2_traj, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/Cat2_Trajectory_Protein_DOWN_Burnout_DOWN.csv", row.names = FALSE)
+write.csv(cat3_traj, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/Cat3_Trajectory_Protein_DOWN_Burnout_UP.csv", row.names = FALSE)
+write.csv(cat4_traj, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/Cat4_Trajectory_Protein_UP_Burnout_DOWN.csv", row.names = FALSE)
+
+cat("Files saved!\n\n")
+```
+
+# ============================================
+# VISUALIZATION 1: BURNOUT TRAJECTORY
+# ============================================
+```{r}
+# ============================================
+# VISUALIZATION 1: BURNOUT TRAJECTORY
+# ============================================
+
+p_burnout <- ggplot(burnout_trajectory, aes(x = Timepoint, y = mean_burnout, group = 1)) +
+  geom_line(linewidth = 1.5, color = "black") + #D32F2F
+  geom_point(size = 4, color = "black") + #D32F2F
+  geom_text(aes(label = round(mean_burnout, 2)), vjust = -1, size = 4, fontface = "bold") +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Burnout Trajectory Across Timepoints",
+    subtitle = paste0("Overall change: ", round(burnout_overall_change, 3)),
+    x = "Timepoint",
+    y = "Mean Burnout Score"
+  ) +
+  theme(panel.grid.minor = element_blank())
+
+print(p_burnout)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Burnout_Trajectory_T1_to_T6.png", p_burnout, width = 10, height = 6, dpi = 300)
+```
+
+# ============================================
+# VISUALIZATION 2: BAR CHART OF CATEGORIES
+# ============================================
+
+```{r}
+# ============================================
+# VISUALIZATION 2: BAR CHART OF CATEGORIES
+# ============================================
+
+summary_traj <- data.frame(
+  Category = c(
+    "Cat 1:\nProtein ↑\nBurnout ↑",
+    "Cat 2:\nProtein ↓\nBurnout ↓",
+    "Cat 3:\nProtein ↓\nBurnout ↑",
+    "Cat 4:\nProtein ↑\nBurnout ↓"
+  ),
+  Count = c(nrow(cat1_traj), nrow(cat2_traj), nrow(cat3_traj), nrow(cat4_traj)),
+  Type = c("Parallel", "Parallel", "Opposite", "Opposite")
+)
+
+p_bar <- ggplot(summary_traj, aes(x = Category, y = Count, fill = Type)) +
+  geom_bar(stat = "identity", color = "black", linewidth = 1) +
+  geom_text(aes(label = Count), vjust = -0.5, size = 8, fontface = "bold") +
+  scale_fill_manual(values = c("Parallel" = "#E53935", "Opposite" = "#1E88E5")) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(size = 12, face = "bold"),
+    panel.grid.major.x = element_blank()
+  ) +
+  labs(
+    title = "Protein Trajectories Relative to Burnout (T1→T6)",
+    subtitle = "Based on average values at each timepoint",
+    x = "",
+    y = "Number of Proteins",
+    fill = "Trajectory Type"
+  ) +
+  ylim(0, max(summary_traj$Count) * 1.2)
+
+print(p_bar)
+
+pTraj<- (p_burnout/p_bar)
+print(pTraj)
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/BarChart_4Categories_Trajectories.png", p_bar, width = 10, height = 7, dpi = 300)
+
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/BarChart_4Categories_Trajectories.pdf", pTraj, width = 5, height = 7, dpi = 300)
+
+```
+
+# ============================================
+# VISUALIZATION 3: EXAMPLE TRAJECTORIES
+# ============================================
+
+```{r}
+# ============================================
+# VISUALIZATION 3: EXAMPLE TRAJECTORIES
+# ============================================
+means_data<-means_by_timepoint
+burnout_traj<-burnout_trajectory
+# Function to plot trajectory for one protein
+plot_trajectory <- function(protein_name, means_data, burnout_trajectory, category_name) {
+  
+  # Prepare data
+  plot_data <- data.frame(
+    Timepoint = means_data$Timepoint,
+    Protein = means_data[[protein_name]],
+    Burnout = burnout_trajectory$mean_burnout
+  )
+  
+  # Normalize to 0-1 scale for comparison
+  plot_data$Protein_norm <- (plot_data$Protein - min(plot_data$Protein)) / 
+                             (max(plot_data$Protein) - min(plot_data$Protein))
+  plot_data$Burnout_norm <- (plot_data$Burnout - min(plot_data$Burnout)) / 
+                             (max(plot_data$Burnout) - min(plot_data$Burnout))
+  
+  # Reshape for plotting
+  plot_long <- plot_data %>%
+    select(Timepoint, Protein_norm, Burnout_norm) %>%
+    pivot_longer(cols = c(Protein_norm, Burnout_norm),
+                 names_to = "Variable",
+                 values_to = "Value")
+  
+  p <- ggplot(plot_long, aes(x = Timepoint, y = Value, 
+                              color = Variable, group = Variable)) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
+    scale_color_manual(
+      values = c("Protein_norm" = "#2196F3", "Burnout_norm" = "#F44336"),
+      labels = c("Burnout", "Protein")
+    ) +
+    theme_minimal(base_size = 12) +
+    labs(
+      title = paste0(category_name, ": ", protein_name),
+      subtitle = "Normalized trajectories (0-1 scale)",
+      x = "Timepoint",
+      y = "Normalized Value",
+      color = ""
+    ) +
+    theme(legend.position = "bottom")
+  
+  return(p)
+}
+
+# Plot examples from each category
+example_plots <- list()
+
+if(nrow(cat1_traj) > 0) {
+  example_plots[[1]] <- plot_trajectory(cat1_traj$protein[1], means_by_timepoint, 
+                                         burnout_trajectory, "Category 1")
+}
+
+if(nrow(cat2_traj) > 0) {
+  example_plots[[2]] <- plot_trajectory(cat2_traj$protein[1], means_by_timepoint, 
+                                         burnout_trajectory, "Category 2")
+}
+
+if(nrow(cat3_traj) > 0) {
+  example_plots[[3]] <- plot_trajectory(cat3_traj$protein[1], means_by_timepoint, 
+                                         burnout_trajectory, "Category 3")
+}
+
+if(nrow(cat4_traj) > 0) {
+  example_plots[[4]] <- plot_trajectory(cat4_traj$protein[1], means_by_timepoint, 
+                                         burnout_trajectory, "Category 4")
+}
+
+# Only combine if we have plots - FIXED
+if(length(example_plots) > 0) {
+  # Calculate grid layout
+  n_plots <- length(example_plots)
+  ncol <- 2
+  nrow <- ceiling(n_plots / ncol)
+  
+  # Save individually first
+  for(i in 1:length(example_plots)) {
+    ggsave(paste0("Example_Trajectory_", names(example_plots)[i], ".png"), 
+           example_plots[[i]], width = 7, height = 5, dpi = 300)
+  }
+  
+  # Then try to combine
+  tryCatch({
+    p_combined <- grid.arrange(grobs = example_plots, ncol = ncol)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Example_Trajectories_4Categories_Combined.png", p_combined, 
+           width = 14, height = nrow * 5, dpi = 300)
+  }, error = function(e) {
+    cat("Note: Combined plot failed, but individual plots saved successfully\n")
+  })
+}
+```
+
+# ============================================
+# VISUALIZATION 4: TOP 5 TRAJECTORIES - FIXED
+# ============================================
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+library(patchwork)
+
+# ============================================
+# FUNCTION: PLOT ALL PROTEINS IN A CATEGORY
+# ============================================
+
+plot_category_trajectories <- function(protein_list, means_data, burnout_traj, 
+                                       category_name, color, n_proteins = NULL) {
+  
+  # Get proteins (all or specified number)
+  if(is.null(n_proteins)) {
+    proteins_to_plot <- protein_list$protein
+  } else {
+    proteins_to_plot <- head(protein_list$protein, n_proteins)
+  }
+  
+  if(length(proteins_to_plot) == 0) {
+    cat("No proteins to plot for", category_name, "\n")
+    return(NULL)
+  }
+  
+  cat("Plotting", length(proteins_to_plot), "proteins for", category_name, "\n")
+  
+  # Prepare protein data
+  plot_data <- means_data %>%
+    select(Timepoint, all_of(proteins_to_plot)) %>%
+    pivot_longer(cols = all_of(proteins_to_plot),
+                 names_to = "Protein",
+                 values_to = "Value") %>%
+    group_by(Protein) %>%
+    mutate(Value_norm = (Value - min(Value, na.rm = TRUE)) / 
+                        (max(Value, na.rm = TRUE) - min(Value, na.rm = TRUE))) %>%
+    ungroup()
+  
+  # Prepare burnout data
+  burnout_data <- data.frame(
+    Timepoint = burnout_traj$Timepoint,
+    Protein = "Burnout",
+    Value_norm = (burnout_traj$mean_burnout - min(burnout_traj$mean_burnout)) /
+                 (max(burnout_traj$mean_burnout) - min(burnout_traj$mean_burnout))
+  )
+  
+  # Combine
+  plot_data_combined <- rbind(
+    plot_data[, c("Timepoint", "Protein", "Value_norm")], 
+    burnout_data
+  )
+  
+  # Create overlay plot (all proteins on one plot)
+  p_overlay <- ggplot(plot_data_combined, 
+                      aes(x = Timepoint, y = Value_norm, 
+                          color = Protein, group = Protein)) +
+    geom_line(aes(linewidth = Protein == "Burnout", 
+                  alpha = Protein == "Burnout")) +
+    geom_point(data = filter(plot_data_combined, Protein == "Burnout"),
+               size = 3) +
+    scale_linewidth_manual(values = c("TRUE" = 2.5, "FALSE" = 0.8), guide = "none") +
+    scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.6), guide = "none") +
+    scale_color_manual(
+      values = c("Burnout" = "#F44336", 
+                 setNames(rep(color, length(proteins_to_plot)), proteins_to_plot)),
+      breaks = "Burnout"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(size = 12)
+    ) + theme_bw()+
+    labs(
+      title = category_name,
+      subtitle = paste(length(proteins_to_plot), "proteins (normalized 0-1) + Burnout trajectory"),
+      x = "Timepoint",
+      y = "Normalized Expression (0-1)"
+    )
+  
+  # Create faceted plot (individual panels for each protein)
+  n_cols <- ceiling(sqrt(length(proteins_to_plot)))
+  
+  p_faceted <- ggplot(plot_data, 
+                      aes(x = Timepoint, y = Value_norm, group = Protein)) +
+    geom_line(color = color, linewidth = 1) +
+    geom_point(color = color, size = 2) +
+    # Add burnout trajectory to each panel
+    geom_line(data = burnout_data,
+              aes(x = Timepoint, y = Value_norm),
+              color = "#F44336", linewidth = 1.5, linetype = "dashed") +
+    facet_wrap(~ Protein, ncol = n_cols, scales = "free_y") +
+    theme_minimal(base_size = 10) +
+    theme(
+      strip.text = element_text(size = 7, face = "bold"),
+      axis.text = element_text(size = 7),
+      panel.spacing = unit(0.3, "lines"),
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 10)
+    ) +
+    labs(
+      title = paste(category_name, "- Individual Trajectories"),
+      subtitle = "Black = Protein | Red dashed = Burnout",
+      x = "Timepoint",
+      y = "Normalized Expression"
+    ) + theme_bw()
+  
+  return(list(overlay = p_overlay, faceted = p_faceted))
+}
+
+# ============================================
+# PLOT CATEGORY 2 (58 PROTEINS)
+# ============================================
+
+cat("\n=== Plotting Category 2 (58 proteins) ===\n\n")
+
+if(exists("cat2_traj") && nrow(cat2_traj) > 0) {
+  
+  cat2_plots <- plot_category_trajectories(
+    protein_list = cat2_traj,
+    means_data = means_by_timepoint,
+    burnout_traj = burnout_trajectory,
+    category_name = "Category 2: Protein ↓ as Burnout ↓",
+    color = "#FF6F00",
+    n_proteins = NULL  # Plot all proteins
+  )
+  
+  if(!is.null(cat2_plots)) {
+    
+    # Save overlay plot
+    print(cat2_plots$overlay)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat2_Overlay_58_Proteins.png", 
+           cat2_plots$overlay, 
+           width = 10, 
+           height = 8, 
+           dpi = 300)
+     ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat2_Overlay_58_Proteins.pdf", 
+           cat2_plots$overlay, 
+           width = 10, 
+           height = 8, 
+           dpi = 300)
+    cat("✓ Cat2_Overlay_58_Proteins.png\n")
+    
+    # Save faceted plot
+    print(cat2_plots$faceted)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat2_Faceted_58_Proteins.png", 
+           cat2_plots$faceted, 
+           width = 16, 
+           height = 20, 
+           dpi = 300)
+      ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat2_Faceted_58_Proteins.pdf", 
+           cat2_plots$faceted, 
+           width = 16, 
+           height = 20, 
+           dpi = 300)
+    cat("✓ Cat2_Faceted_58_Proteins.png\n\n")
+  }
+  
+} else {
+  cat("Category 2 not found or empty\n\n")
+}
+```
+
+# ============================================
+# PLOT CATEGORY 4 (20 PROTEINS)
+# ============================================
+```{r}
+# ============================================
+# PLOT CATEGORY 4 (20 PROTEINS)
+# ============================================
+
+cat("=== Plotting Category 4 (20 proteins) ===\n\n")
+
+if(exists("cat4_traj") && nrow(cat4_traj) > 0) {
+  
+  cat4_plots <- plot_category_trajectories(
+    protein_list = cat4_traj,
+    means_data = means_by_timepoint,
+    burnout_traj = burnout_trajectory,
+    category_name = "Category 4: Protein ↑ as Burnout ↓",
+    color = "#388E3C",
+    n_proteins = NULL  # Plot all proteins
+  )
+  
+  if(!is.null(cat4_plots)) {
+    
+    # Save overlay plot
+    print(cat4_plots$overlay)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat4_Overlay_20_Proteins.png", 
+           cat4_plots$overlay, 
+           width = 10, 
+           height = 8, 
+           dpi = 300)
+     ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat4_Overlay_20_Proteins.pdf", 
+           cat4_plots$overlay, 
+           width = 10, 
+           height = 8, 
+           dpi = 300)
+    cat("✓ Cat4_Overlay_20_Proteins.png\n")
+    
+    # Save faceted plot
+    print(cat4_plots$faceted)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat4_Faceted_20_Proteins.png", 
+           cat4_plots$faceted, 
+           width = 12, 
+           height = 10, 
+           dpi = 300)
+      ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat4_Faceted_20_Proteins.pdf", 
+           cat4_plots$faceted, 
+           width = 12, 
+           height = 10, 
+           dpi = 300)
+    cat("✓ Cat4_Faceted_20_Proteins.png\n\n")
+  }
+  
+} else {
+  cat("Category 4 not found or empty\n\n")
+}
+```
+
+# ============================================
+# ALTERNATIVE: HEATMAP VISUALIZATION
+# ============================================
+
+```{r}
+means_by_timepoint<-means_by_timepoint %>% filter(Timepoint %in% c("C1", "C2", "C3", "C4", "C5", "C6"))
+
+means_data<-means_by_timepoint
+burnout_traj<-burnout_trajectory
+
+
+
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# ============================================
+# FIXED: HEATMAP WITH DUPLICATE HANDLING
+# ============================================
+
+create_category_heatmap <- function(protein_list, means_data, category_name, color) {
+  
+  # Get unique proteins only (remove duplicates)
+  proteins <- unique(protein_list$protein)
+  
+  if(length(proteins) == 0) {
+    cat("No proteins to plot for", category_name, "\n")
+    return(NULL)
+  }
+  
+  cat("Creating heatmap for", length(proteins), "unique proteins\n")
+  
+  # Check for duplicates in input
+  if(length(proteins) < length(protein_list$protein)) {
+    cat("  WARNING: Removed", length(protein_list$protein) - length(proteins), "duplicate proteins\n")
+  }
+  
+  # Get data and normalize
+  heatmap_data <- means_data %>%
+    select(Timepoint, all_of(proteins)) %>%
+    pivot_longer(cols = all_of(proteins),
+                 names_to = "Protein",
+                 values_to = "Value") %>%
+    # Remove any duplicate Protein-Timepoint combinations
+    distinct(Protein, Timepoint, .keep_all = TRUE) %>%
+    group_by(Protein) %>%
+    mutate(Z_score = scale(Value)[,1]) %>%
+    ungroup()
+  
+  # Order proteins by their trajectory pattern (use unique proteins only)
+  protein_order <- proteins  # Already unique
+  
+  # Verify no duplicates in protein_order
+  if(any(duplicated(protein_order))) {
+    cat("  WARNING: Found duplicates in protein_order, removing...\n")
+    protein_order <- unique(protein_order)
+  }
+  
+  # Set factor levels
+  heatmap_data$Protein <- factor(heatmap_data$Protein, levels = protein_order)
+  
+  p <- ggplot(heatmap_data, aes(x = Timepoint, y = Protein, fill = Z_score)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    scale_fill_gradient2(
+      low = "#2166AC", mid = "white", high = "#B2182B",
+      midpoint = 0,
+      limits = c(-3, 3),
+      oob = scales::squish,
+      name = "Z-score"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      axis.text.y = element_text(size = 6),
+      panel.grid = element_blank(),
+      plot.title = element_text(face = "bold"),
+      axis.text.x = element_text(size = 10, face = "bold")
+    ) +
+    labs(
+      title = paste(category_name, "- Heatmap"),
+      subtitle = paste(length(proteins), "unique proteins"),
+      x = "Timepoint",
+      y = paste(length(proteins), "Proteins")
+    )
+  
+  return(p)
+}
+
+# ============================================
+# CHECK AND FIX YOUR DATA FIRST
+# ============================================
+
+cat("=== Checking for Duplicates in Categories ===\n\n")
+
+# Check Category 2
+if(exists("cat2_traj")) {
+  cat("Category 2:\n")
+  cat("  Total rows:", nrow(cat2_traj), "\n")
+  cat("  Unique proteins:", length(unique(cat2_traj$protein)), "\n")
+  
+  if(any(duplicated(cat2_traj$protein))) {
+    cat("  WARNING: Found", sum(duplicated(cat2_traj$protein)), "duplicates!\n")
+    cat("  Removing duplicates...\n")
+    
+    # Keep only first occurrence of each protein
+    cat2_traj <- cat2_traj %>%
+      distinct(protein, .keep_all = TRUE)
+    
+    cat("  After cleaning:", nrow(cat2_traj), "proteins\n")
+  }
+  cat("\n")
+}
+
+# Check Category 4
+if(exists("cat4_traj")) {
+  cat("Category 4:\n")
+  cat("  Total rows:", nrow(cat4_traj), "\n")
+  cat("  Unique proteins:", length(unique(cat4_traj$protein)), "\n")
+  
+  if(any(duplicated(cat4_traj$protein))) {
+    cat("  WARNING: Found", sum(duplicated(cat4_traj$protein)), "duplicates!\n")
+    cat("  Removing duplicates...\n")
+    
+    # Keep only first occurrence of each protein (best FDR)
+    cat4_traj <- cat4_traj %>%
+      arrange(fdr_trend) %>%  # Sort by FDR first
+      distinct(protein, .keep_all = TRUE)
+    
+    cat("  After cleaning:", nrow(cat4_traj), "proteins\n")
+  }
+  cat("\n")
+}
+
+# ============================================
+# NOW CREATE HEATMAPS
+# ============================================
+
+cat("=== Creating Heatmaps ===\n\n")
+
+# Heatmap for Category 2
+if(exists("cat2_traj") && nrow(cat2_traj) > 0) {
+  p_heatmap_cat2 <- create_category_heatmap(
+    cat2_traj, 
+    means_by_timepoint,
+    "Category 2: Protein ↓ as Burnout ↓",
+    "#FF6F00"
+  )
+  
+  if(!is.null(p_heatmap_cat2)) {
+    print(p_heatmap_cat2)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat2_Heatmap_Proteins.png", 
+           p_heatmap_cat2, 
+           width = 8, 
+           height = max(6, nrow(cat2_traj) * 0.15), 
+           dpi = 300,
+           limitsize = FALSE)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat2_Heatmap_Proteins.pdf", 
+           p_heatmap_cat2, 
+           width = 5, 
+           height = max(6, nrow(cat2_traj) * 0.15), 
+           dpi = 300,
+           limitsize = FALSE)
+    cat("✓ Cat2_Heatmap_Proteins.png\n\n")
+  }
+}
+
+# Heatmap for Category 4
+if(exists("cat4_traj") && nrow(cat4_traj) > 0) {
+  p_heatmap_cat4 <- create_category_heatmap(
+    cat4_traj, 
+    means_by_timepoint,
+    "Category 4: Protein ↑ as Burnout ↓",
+    "#388E3C"
+  )
+  
+  if(!is.null(p_heatmap_cat4)) {
+    print(p_heatmap_cat4)
+    ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat4_Heatmap_Proteins.png", 
+           p_heatmap_cat4, 
+           width = 8, 
+           height = max(6, nrow(cat4_traj) * 0.15), 
+           dpi = 300,
+           limitsize = FALSE)
+     ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Olink_Cat4_Cat2/Cat4_Heatmap_Proteins.pdf", 
+           p_heatmap_cat4, 
+           width = 5, 
+           height = max(6, nrow(cat4_traj) * 0.15), 
+           dpi = 300,
+           limitsize = FALSE)
+    cat("✓ Cat4_Heatmap_Proteins.png\n\n")
+  }
+}
+
+```
+
+# ============================================
+# SUMMARY TABLE
+# ============================================
+
+
+```{r}
+# ============================================
+# SUMMARY TABLE
+# ============================================
+
+summary_stats_table <- data.frame(
+  Category = c(
+    "Category 1: Protein ↑ as Burnout ↑",
+    "Category 2: Protein ↓ as Burnout ↓",
+    "Category 3: Protein ↓ as Burnout ↑",
+    "Category 4: Protein ↑ as Burnout ↓"
+  ),
+  N_Proteins = c(nrow(cat1_traj), nrow(cat2_traj), nrow(cat3_traj), nrow(cat4_traj)),
+  Mean_Slope = c(
+    ifelse(nrow(cat1_traj) > 0, mean(cat1_traj$protein_slope), NA),
+    ifelse(nrow(cat2_traj) > 0, mean(cat2_traj$protein_slope), NA),
+    ifelse(nrow(cat3_traj) > 0, mean(cat3_traj$protein_slope), NA),
+    ifelse(nrow(cat4_traj) > 0, mean(cat4_traj$protein_slope), NA)
+  ),
+  Mean_Correlation = c(
+    ifelse(nrow(cat1_traj) > 0, mean(cat1_traj$correlation_with_burnout), NA),
+    ifelse(nrow(cat2_traj) > 0, mean(cat2_traj$correlation_with_burnout), NA),
+    ifelse(nrow(cat3_traj) > 0, mean(cat3_traj$correlation_with_burnout), NA),
+    ifelse(nrow(cat4_traj) > 0, mean(cat4_traj$correlation_with_burnout), NA)
+  )
+)
+
+cat("\n=== SUMMARY STATISTICS ===\n")
+print(summary_stats_table)
+write.csv(summary_stats_table, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Summary_Statistics_Trajectories.csv", row.names = FALSE)
+
+
+cat("\n=== SUMMARY STATISTICS ===\n")
+print(summary_stats_table)
+write.csv(summary_stats_table, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Summary_Statistics_Trajectories.csv", row.names = FALSE)
+
+# ============================================
+# FINAL REPORT
+# ============================================
+
+cat("\n\n========================================\n")
+cat("TRAJECTORY-BASED 4-CATEGORY ANALYSIS COMPLETE\n")
+cat("========================================\n\n")
+
+cat("RESULTS:\n")
+cat("  Category 1:", nrow(cat1_traj), "proteins\n")
+cat("  Category 2:", nrow(cat2_traj), "proteins\n")
+cat("  Category 3:", nrow(cat3_traj), "proteins\n")
+cat("  Category 4:", nrow(cat4_traj), "proteins\n\n")
+
+cat("FILES SAVED:\n")
+cat("  ✓ All CSV files\n")
+cat("  ✓ Individual trajectory plots\n")
+cat("  ✓ Summary visualizations\n\n")
+
+cat("========================================\n\n")
+
+```
+###Lmer Positive and negative models 
+##graphics
+```{r}
+full_dataT<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/fullData.csv")
+rownames(full_dataT)<-full_dataT$X
+
+
+dex<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/MetaData/burnoutEx.csv")
+rownames(dex)<-dex$X
+
+
+colnames(full_dataT)
+library(tidyr)
+library(dplyr)
+
+# Example: wide data››¢
+# Columns: ID, time, age, sex, protein1, protein2, ..., protein5000
+##not used
+df_long <- full_dataT %>%
+  pivot_longer(
+    cols = 9:5435,
+    names_to = "protein",
+    values_to = "value"
+  )
+#####
+listNeg<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NegList.csv")
+rownames(listNeg)<-listNeg$X
+
+
+listNeg$cor<-ifelse(listNeg$estimate<0, -1, 1)
+
+
+listPos<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/PosList.csv")
+listPos$cor<-ifelse(listPos$estimate<0,-1,1)
+
+data<- rbind(listNeg,listPos)
+# Inspect
+head(df_long)
+
+##now from full data select only expression for those neg and pos 
+library(dplyr)
+
+met<-full_dataT[1:8]
+```
+
+
+```{r}
+ExpNeg <- dex%>%
+  select(any_of(listNeg$protein))
+
+library(tibble)
+library(tidyr)
+
+dtN <- ExpNeg %>%
+  rownames_to_column(var = "rowname") %>%
+  separate(rowname, into = c("ID", "timepoint"), sep = "-")
+rownames(dtN)<-rownames(ExpNeg)
+
+dtNmet<- merge(met,dtN, by="row.names")
+dtNmet<-dtNmet %>% filter(Time %in% c("C1", "C2", "C3", "C4", "C5", "C6"))
+write.csv(dtNmet, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/dtNmetRemoveNA.csv")
+
+ExpPos <-dex %>%
+  select(any_of(listPos$protein))
+
+dtP <- ExpPos %>%
+  rownames_to_column(var = "rowname") %>%
+  separate(rowname, into = c("ID", "timepoint"), sep = "-")
+rownames(dtP)<-rownames(ExpPos)
+
+dtPmet<- merge(met,dtP, by="row.names")
+colnames(dtPmet)
+unique(dtPmet$Time)
+
+dtPmet<-dtPmet %>% filter(Time %in% c("C1", "C2", "C3", "C4", "C5", "C6"))
+
+write.csv(dtPmet, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/dtPmetRemoveNA.csv")
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+dx<-dtPmet # used remove NA
+
+##second Neg
+
+dx<-dtNmet
+# ============================================
+# METHOD 1: FACETED PLOT FOR MANY PROTEINS
+# ============================================
+
+# Select first 400 proteins (columns 4 to 403 assuming first 3 are ID, Timepoint, Burnout)
+# Adjust column indices based on your actual data structure
+
+# Get protein column names (assuming proteins start at column 6)
+protein_cols <- colnames(dx)[12:408]  # First 400 proteins for positive
+
+protein_cols <- colnames(dx)[12:50]  # First 400 proteins for negative
+
+
+# Reshape to long format
+protein_long <- dx %>%
+  select(ID, Time, all_of(protein_cols)) %>%
+  pivot_longer(
+    cols = all_of(protein_cols),
+    names_to = "Protein",
+    values_to = "Expression"
+  )
+
+cat("Data reshaped:\n")
+cat("  Total rows:", nrow(protein_long), "\n")
+cat("  Proteins:", length(unique(protein_long$Protein)), "\n\n")
+
+# Create faceted plot (small multiples)
+# For 400 proteins, this creates a grid of small plots
+
+p_faceted <- ggplot(protein_long, 
+                    aes(x = Time, y = Expression, group = ID)) +
+  geom_line(alpha = 0.2, color = "gray70", linewidth = 0.5) +
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "red", linewidth = 0.8) +
+  facet_wrap(~ Protein, scales = "free_y", ncol = 20) +  # 20 columns
+  theme_minimal(base_size = 15) +
+  theme(
+    strip.text = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16)
+  ) + theme_bw()+
+  labs(
+    title = "Trajectories for 39 Proteins (T1-T6)",  
+    subtitle = "Red line = mean trajectory, gray lines = individual subjects",
+    x = "Timepoint",
+    y = "Protein Expression"
+  ) #400 Proteins (T1-T6)
+
+print(p_faceted)
+
+
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Faceted_39_Proteins_Neg.png", p_faceted, 
+       width = 40, height = 10, dpi = 300, limitsize = FALSE) # width = 45, height = 50, dpi = 300, limitsize = FALSE)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Faceted_39_Proteins_Neg.pdf", p_faceted, 
+       width = 40, height = 10, dpi = 300, limitsize = FALSE) #width = 55, height = 65, dpi = 300, limitsize = FALSE
+
+cat("Saved: Faceted_400_Proteins.png (large file!)\n\n")
+cat("Saved: Faceted_39_Proteins.png (large file!)\n\n")
+
+```
+#pvalue line plot
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# ============================================
+# STEP 1: PREPARE DATA
+# ============================================
+
+dx<-dtPmet # used remove NA
+
+protein_cols <- colnames(dx)[12:408]
+
+##second Neg
+
+dx<-dtNmet # used remove NA
+# ============================================
+# METHOD 1: FACETED PLOT FOR MANY PROTEINS
+# ============================================
+
+# Select first 400 proteins (columns 4 to 403 assuming first 3 are ID, Timepoint, Burnout)
+# Adjust column indices based on your actual data structure
+
+protein_cols <- colnames(dx)[12:50]  # First 400 proteins for negative
+```
+
+
+```{r}
+cat("=== Preparing Data ===\n")
+cat("Proteins to analyze:", length(protein_cols), "\n\n")
+
+# Handle duplicates by averaging
+dx_clean <- dx %>%
+  group_by(ID, Time) %>%
+  summarise(across(all_of(protein_cols), ~mean(.x, na.rm = TRUE)), 
+            .groups = 'drop')
+
+# Reshape to long format
+protein_long <- dx_clean %>%
+  select(ID, Time, all_of(protein_cols)) %>%
+  pivot_longer(
+    cols = all_of(protein_cols),
+    names_to = "Protein",
+    values_to = "Expression"
+  )
+
+cat("Data reshaped:\n")
+cat("  Total rows:", nrow(protein_long), "\n")
+cat("  Proteins:", length(unique(protein_long$Protein)), "\n")
+cat("  Timepoints:", paste(unique(protein_long$Time), collapse = ", "), "\n\n")
+
+# ============================================
+# STEP 2: RUN WILCOXON TESTS
+# ============================================
+
+cat("=== Running Wilcoxon Tests ===\n")
+
+# Determine reference timepoint
+ref_time <- sort(unique(dx_clean$Time))[1]
+cat("Reference timepoint:", ref_time, "\n\n")
+
+# Function to test one protein
+wilcox_one_protein <- function(protein_name, data, ref_time) {
+  
+  results <- data.frame()
+  other_times <- setdiff(unique(data$Time), ref_time)
+  
+  for(comp_time in other_times) {
+    
+    # Get paired data
+    ref_data <- data %>% 
+      filter(Time == ref_time) %>%
+      select(ID, Expression)
+    
+    comp_data <- data %>%
+      filter(Time == comp_time) %>%
+      select(ID, Expression)
+    
+    # Merge
+    merged <- inner_join(ref_data, comp_data, by = "ID", 
+                        suffix = c("_ref", "_comp"))
+    
+    # Clean
+    merged_clean <- merged %>%
+      filter(!is.na(Expression_ref), !is.na(Expression_comp))
+    
+    if(nrow(merged_clean) >= 5) {
+      
+      test <- tryCatch({
+        wilcox.test(merged_clean$Expression_ref,
+                   merged_clean$Expression_comp,
+                   paired = TRUE,
+                   exact = FALSE)
+      }, error = function(e) NULL)
+      
+      if(!is.null(test)) {
+        results <- rbind(results, data.frame(
+          Protein = protein_name,
+          Time = comp_time,
+          P_value = test$p.value,
+          N_pairs = nrow(merged_clean)
+        ))
+      }
+    }
+  }
+  
+  return(results)
+}
+
+# Run tests for all proteins
+cat("Testing", length(protein_cols), "proteins...\n")
+
+all_wilcox <- data.frame()
+pb <- txtProgressBar(min = 0, max = length(protein_cols), style = 3)
+
+for(i in 1:length(protein_cols)) {
+  prot_data <- protein_long %>% filter(Protein == protein_cols[i])
+  result <- wilcox_one_protein(protein_cols[i], prot_data, ref_time)
+  if(nrow(result) > 0) {
+    all_wilcox <- rbind(all_wilcox, result)
+  }
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+cat("\n\nWilcoxon tests completed!\n")
+
+# FDR correction
+all_wilcox <- all_wilcox %>%
+  group_by(Time) %>%
+  mutate(FDR = p.adjust(P_value, method = "BH")) %>%
+  ungroup()
+
+# Add significance labels
+all_wilcox <- all_wilcox %>%
+  mutate(
+    Sig_label = case_when(
+      FDR < 0.05 ~ "***",
+      FDR < 0.1 ~ "**",
+      FDR < 0.2 ~ "*",
+      TRUE ~ ""
+    ),
+    Significant = FDR < 0.2
+  )
+
+cat("Significant results (FDR < 0.05):", sum(all_wilcox$FDR < 0.2), "\n\n")
+```
+
+
+```{r}
+# Save results
+write.csv(all_wilcox, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/POS/Wilcoxon_Results_All_Proteins.csv", row.names = FALSE)
+
+write.csv(all_wilcox, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Wilcoxon_Results_All_Proteins.csv", row.names = FALSE)
+```
+
+# ============================================
+# STEP 3: PREPARE PLOT ANNOTATIONS
+# ============================================
+
+```{r}
+# ============================================
+# STEP 3: PREPARE PLOT ANNOTATIONS
+# ============================================
+
+# Calculate mean expression for positioning annotations
+mean_expr <- protein_long %>%
+  group_by(Protein, Time) %>%
+  summarise(Mean_Expression = mean(Expression, na.rm = TRUE),
+            Max_Expression = max(Expression, na.rm = TRUE),
+            .groups = 'drop')
+
+# Merge with Wilcoxon results
+plot_annotations <- all_wilcox %>%
+  left_join(mean_expr, by = c("Protein", "Time")) %>%
+  filter(Significant) %>%  # Only show significant
+  mutate(
+    # Position slightly above the max value
+    Y_position = Max_Expression * 1.05
+  )
+
+cat("Annotations prepared for", nrow(plot_annotations), "significant comparisons\n\n")
+
+# ============================================
+# STEP 4: CREATE PLOT WITH SIGNIFICANCE
+# ============================================
+
+cat("=== Creating Faceted Plot with Wilcoxon Results ===\n\n")
+
+p_faceted <- ggplot(protein_long, 
+                    aes(x = Time, y = Expression, group = ID)) +
+  # Individual trajectories
+  geom_line(alpha = 0.2, color = "gray70", linewidth = 0.3) +
+  
+  # Mean trajectory
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "red", linewidth = 0.8) +
+  stat_summary(aes(group = 1), fun = mean, geom = "point", 
+               color = "red", size = 1.5) +
+  
+  # Add significance annotations
+  geom_text(data = plot_annotations,
+            aes(x = Time, y = Y_position, label = Sig_label, group = NULL),
+            color = "blue", size = 3, fontface = "bold",
+            inherit.aes = FALSE) +
+  
+  # Facets
+  facet_wrap(~ Protein, scales = "free_y", ncol = 20) +
+  
+  # Theme
+  theme_minimal(base_size = 10) +
+  theme(
+    strip.text = element_text(size = 6, face = "bold"),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 12, face = "bold"),
+    panel.spacing = unit(0.1, "lines")
+  ) +
+  
+  # Labels
+  labs(
+    title = "Protein Trajectories with Wilcoxon Test Results",
+    subtitle = paste0("Red = mean trajectory | Blue asterisks = significant vs ", ref_time, 
+                     " (* FDR<0.2, ** FDR<0.1, *** FDR<0.05)"),
+    x = "Timepoint",
+    y = "Protein Expression"
+  )
+
+print(p_faceted)
+```
+
+
+```{r}
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/POS/Faceted_Proteins_with_Wilcoxon.png", p_faceted, 
+       width = 40, height = 40, dpi = 300, limitsize = FALSE)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/POS/Faceted_Proteins_with_Wilcoxon.pdf", p_faceted, 
+       width = 40, height = 40, limitsize = FALSE)
+
+cat("✓ Plot saved: Faceted_Proteins_with_Wilcoxon.png\n\n")
+
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Faceted_Proteins_with_Wilcoxon.png", p_faceted, 
+       width = 40, height = 40, dpi = 300, limitsize = FALSE)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Faceted_Proteins_with_Wilcoxon.pdf", p_faceted, 
+       width = 40, height = 40, limitsize = FALSE)
+
+cat("✓ Plot saved: Faceted_Proteins_with_Wilcoxon.png\n\n")
+```
+
+# ============================================
+# STEP 5: ALTERNATIVE - COLOR-CODED PLOT
+# ============================================
+```{r}
+# ============================================
+# STEP 5: ALTERNATIVE - COLOR-CODED PLOT
+# ============================================
+
+cat("=== Creating Alternative Version (Color-coded significance) ===\n\n")
+
+# Add significance info to main data
+protein_long_sig <- protein_long %>%
+  left_join(
+    all_wilcox %>% select(Protein, Time, Significant),
+    by = c("Protein", "Time")
+  ) %>%
+  mutate(Significant = replace_na(Significant, FALSE))
+
+# Calculate mean with significance
+mean_data_sig <- protein_long_sig %>%
+  group_by(Protein, Time, Significant) %>%
+  summarise(Mean_Expression = mean(Expression, na.rm = TRUE),
+            .groups = 'drop')
+
+p_faceted_color <- ggplot() +
+  # Individual trajectories
+  geom_line(data = protein_long,
+            aes(x = Time, y = Expression, group = ID),
+            alpha = 0.2, color = "gray70", linewidth = 0.3) +
+  
+  # Mean trajectory - colored by significance
+  geom_line(data = mean_data_sig,
+            aes(x = Time, y = Mean_Expression, 
+                group = Protein, color = Significant),
+            linewidth = 1) +
+  geom_point(data = mean_data_sig,
+             aes(x = Time, y = Mean_Expression, 
+                 color = Significant, fill = Significant),
+             size = 2, shape = 21, stroke = 1) +
+  
+  scale_color_manual(
+    values = c("FALSE" = "red", "TRUE" = "blue"),
+    labels = c("Not significant", paste0("Significant vs ", ref_time))
+  ) +
+  scale_fill_manual(
+    values = c("FALSE" = "red", "TRUE" = "blue"),
+    labels = c("Not significant", paste0("Significant vs ", ref_time))
+  ) +
+  
+  facet_wrap(~ Protein, scales = "free_y", ncol = 20) +
+  
+  theme_minimal(base_size = 10) +
+  theme(
+    strip.text = element_text(size = 6, face = "bold"),
+    axis.text = element_text(size = 8),
+    legend.position = "bottom",
+    legend.text = element_text(size = 10),
+    panel.spacing = unit(0.1, "lines")
+  ) +
+  
+  labs(
+    title = "Protein Trajectories with Wilcoxon Test Results",
+    subtitle = paste0("Blue points = significantly different from ", ref_time, " (FDR < 0.05)"),
+    x = "Timepoint",
+    y = "Protein Expression",
+    color = "Wilcoxon Test",
+    fill = "Wilcoxon Test"
+  )
+
+print(p_faceted_color)
+```
+
+
+```{r}
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/POS/Faceted_Proteins_ColorCoded.png", p_faceted_color, 
+       width = 40, height = 40, dpi = 300, limitsize = FALSE)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/POS/Faceted_Proteins_ColorCoded.pdf", p_faceted_color, 
+       width = 40, height = 40, dpi = 300, limitsize = FALSE)
+
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Faceted_Proteins_ColorCoded.png", p_faceted_color, 
+       width = 40, height = 40, dpi = 300, limitsize = FALSE)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Faceted_Proteins_ColorCoded.pdf", p_faceted_color, 
+       width = 40, height = 40, dpi = 300, limitsize = FALSE)
+cat("✓ Alternative plot saved: Faceted_Proteins_ColorCoded.png\n\n")
+```
+
+# ============================================
+# STEP 6: SUMMARY PLOT - HEATMAP OF SIGNIFICANCE
+# ============================================
+```{r}
+# ============================================
+# STEP 6: SUMMARY PLOT - HEATMAP OF SIGNIFICANCE
+# ============================================
+
+cat("=== Creating Summary Heatmap ===\n\n")
+
+# Create significance matrix
+sig_matrix <- all_wilcox %>%
+  mutate(Sig_numeric = -log10(FDR)) %>%
+  select(Protein, Time, Sig_numeric) %>%
+  pivot_wider(names_from = Time, values_from = Sig_numeric, values_fill = 0)
+
+sig_matrix_long <- sig_matrix %>%
+  pivot_longer(cols = -Protein, names_to = "Time", values_to = "neg_log_FDR")
+
+p_heatmap <- ggplot(sig_matrix_long, 
+                    aes(x = Time, y = Protein, fill = neg_log_FDR)) +
+  geom_tile(color = "white", linewidth = 0.1) +
+  scale_fill_gradient2(
+    low = "white", mid = "yellow", high = "red",
+    midpoint = 1.3,  # -log10(0.05)
+    name = "-log10(FDR)",
+    breaks = c(0, 1.3, 2, 3),
+    labels = c("NS", "0.2", "0.1", "0.05")
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Heatmap: Wilcoxon Test Significance Across All Proteins",
+    subtitle = paste0("Comparing each timepoint to ", ref_time),
+    x = "Timepoint",
+    y = paste(length(protein_cols), "Proteins")
+  )
+
+print(p_heatmap)
+
+ggsave("Heatmap_Wilcoxon_Significance.png", p_heatmap, 
+       width = 8, height = 20, dpi = 300)
+
+cat("✓ Heatmap saved: Heatmap_Wilcoxon_Significance.png\n\n")
+```
+
+
+```{r}
+# ============================================
+# STEP 7: SUMMARY STATISTICS
+# ============================================
+
+cat("=== Summary Statistics ===\n\n")
+
+summary_stats <- all_wilcox %>%
+  group_by(Time) %>%
+  summarise(
+    N_proteins = n(),
+    N_sig_p05 = sum(P_value < 0.05),
+    N_sig_FDR1 = sum(FDR < 0.1),
+    N_sig_FDR2 = sum(FDR < 0.2),
+    Median_pvalue = median(P_value),
+    .groups = 'drop'
+  )
+
+cat("Significance summary by timepoint:\n")
+print(summary_stats)
+
+write.csv(summary_stats, "Wilcoxon_Summary_by_Timepoint.csv", row.names = FALSE)
+
+# ============================================
+# FINAL REPORT
+# ============================================
+
+cat("\n========================================\n")
+cat("ANALYSIS COMPLETE\n")
+cat("========================================\n\n")
+
+cat("PROTEINS ANALYZED:", length(protein_cols), "\n")
+cat("REFERENCE TIMEPOINT:", ref_time, "\n")
+cat("COMPARISONS:", paste(setdiff(unique(protein_long$Time), ref_time), collapse = ", "), "\n\n")
+
+cat("SIGNIFICANT RESULTS (FDR < 0.2):\n")
+for(i in 1:nrow(summary_stats)) {
+  cat("  ", summary_stats$Time[i], ": ", 
+      summary_stats$N_sig_FDR05[i], " proteins\n", sep = "")
+}
+
+cat("\nFILES CREATED:\n")
+cat("  ✓ Faceted_Proteins_with_Wilcoxon.png (asterisks)\n")
+cat("  ✓ Faceted_Proteins_ColorCoded.png (color-coded)\n")
+cat("  ✓ Heatmap_Wilcoxon_Significance.png (overview)\n")
+cat("  ✓ Wilcoxon_Results_All_Proteins.csv (detailed results)\n")
+cat("  ✓ Wilcoxon_Summary_by_Timepoint.csv (summary)\n\n")
+
+cat("========================================\n\n")
+```
+# ============================================
+# PLOT ONLY PROTEINS WITH SIGNIFICANT CHANGES
+# ============================================
+```{r}
+# ============================================
+# PLOT ONLY PROTEINS WITH SIGNIFICANT CHANGES
+# ============================================
+
+cat("=== Creating Plot for Significant Proteins Only ===\n\n")
+
+# Get proteins with at least one significant change
+sig_proteins <- unique(all_wilcox$Protein[all_wilcox$FDR < 0.2])
+
+cat("Proteins with significant changes:", length(sig_proteins), "\n\n")
+
+if(length(sig_proteins) > 0) {
+  
+  # Filter data
+  protein_long_sig_only <- protein_long %>%
+    filter(Protein %in% sig_proteins)
+  
+  plot_annotations_sig <- plot_annotations %>%
+    filter(Protein %in% sig_proteins)
+  
+  # Create plot
+  p_sig_only <- ggplot(protein_long_sig_only, 
+                       aes(x = Time, y = Expression, group = ID)) +
+    geom_line(alpha = 0.2, color = "gray70", linewidth = 0.3) +
+    stat_summary(aes(group = 1), fun = mean, geom = "line", 
+                 color = "red", linewidth = 1) +
+    stat_summary(aes(group = 1), fun = mean, geom = "point", 
+                 color = "red", size = 2) +
+    geom_text(data = plot_annotations_sig,
+              aes(x = Time, y = Y_position, label = Sig_label, group = NULL),
+              color = "blue", size = 4, fontface = "bold",
+              inherit.aes = FALSE) +
+    facet_wrap(~ Protein, scales = "free_y", ncol = 10) +
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(size = 10, face = "bold"),
+      axis.text = element_text(size = 10)
+    ) +
+    labs(
+      title = paste("Significant Proteins Only (n =", length(sig_proteins), ")"),
+      subtitle = paste0("Proteins with FDR < 0.2 vs ", ref_time),
+      x = "Timepoint",
+      y = "Expression"
+    )
+  
+  print(p_sig_only)
+  
+  ggsave("Significant_Proteins_Only.png", p_sig_only, 
+         width = 20, height = ceiling(length(sig_proteins)/10) * 3, 
+         dpi = 300, limitsize = FALSE)
+    ggsave("Significant_Proteins_Only.pdf", p_sig_only, 
+         width = 20, height = ceiling(length(sig_proteins)/10) * 3, 
+         dpi = 300, limitsize = FALSE)
+  
+  cat("✓ Significant proteins plot saved\n")
+}
+```
+##baseline T1
+# ============================================
+# STEP 1: PREPARE DATA
+# ============================================
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+
+# ============================================
+# STEP 1: PREPARE DATA
+# ============================================
+
+cat("=== Data Preparation ===\n\n")
+
+# Handle duplicates
+dx_clean <- dx %>%
+  group_by(ID, Time) %>%
+  summarise(across(all_of(protein_cols), ~mean(.x, na.rm = TRUE)), 
+            .groups = 'drop')
+
+# Check available timepoints
+available_times <- sort(unique(dx_clean$Time))
+cat("Available timepoints:", paste(available_times, collapse = ", "), "\n")
+
+# EXPLICITLY SET C1 AS BASELINE
+ref_time <- "C1"
+
+# If C1 doesn't exist, find the correct name
+if(!ref_time %in% available_times) {
+  cat("\nWARNING: 'C1' not found!\n")
+  cat("Looking for alternative baseline names...\n")
+  
+  # Try common alternatives
+  if("T1" %in% available_times) {
+    ref_time <- "T1"
+    cat("Using T1 as baseline\n")
+  } else if("1" %in% available_times) {
+    ref_time <- "1"
+    cat("Using 1 as baseline\n")
+  } else {
+    ref_time <- available_times[1]
+    cat("Using first timepoint (", ref_time, ") as baseline\n")
+  }
+}
+
+cat("\n*** BASELINE SET TO:", ref_time, "***\n\n")
+
+# Reshape to long
+protein_long <- dx_clean %>%
+  select(ID, Time, all_of(protein_cols)) %>%
+  pivot_longer(
+    cols = all_of(protein_cols),
+    names_to = "Protein",
+    values_to = "Expression"
+  )
+
+# ============================================
+# STEP 2: WILCOXON TESTS - C1 AS REFERENCE
+# ============================================
+
+cat("=== Running Wilcoxon Tests ===\n")
+cat("Reference (baseline):", ref_time, "\n")
+
+other_times <- setdiff(unique(dx_clean$Time), ref_time)
+cat("Comparing to:", paste(other_times, collapse = ", "), "\n\n")
+
+# Function to test one protein against C1
+wilcox_vs_baseline <- function(protein_name, data, baseline) {
+  
+  results <- data.frame()
+  comparison_times <- setdiff(unique(data$Time), baseline)
+  
+  # Get baseline data once
+  baseline_data <- data %>% 
+    filter(Time == baseline) %>%
+    select(ID, Expression) %>%
+    rename(Expression_baseline = Expression)
+  
+  for(comp_time in comparison_times) {
+    
+    # Get comparison timepoint data
+    comp_data <- data %>%
+      filter(Time == comp_time) %>%
+      select(ID, Expression) %>%
+      rename(Expression_comp = Expression)
+    
+    # Merge on ID (paired test)
+    merged <- inner_join(baseline_data, comp_data, by = "ID") %>%
+      filter(!is.na(Expression_baseline), !is.na(Expression_comp))
+    
+    if(nrow(merged) >= 5) {
+      
+      test <- tryCatch({
+        wilcox.test(merged$Expression_baseline,
+                   merged$Expression_comp,
+                   paired = TRUE,
+                   exact = FALSE)
+      }, error = function(e) NULL)
+      
+      if(!is.null(test)) {
+        
+        # Calculate effect (median difference)
+        median_baseline <- median(merged$Expression_baseline, na.rm = TRUE)
+        median_comp <- median(merged$Expression_comp, na.rm = TRUE)
+        median_diff <- median_comp - median_baseline
+        
+        results <- rbind(results, data.frame(
+          Protein = protein_name,
+          Baseline = baseline,
+          Comparison = comp_time,
+          Comparison_label = paste0(baseline, "_vs_", comp_time),
+          N_pairs = nrow(merged),
+          Median_baseline = median_baseline,
+          Median_comparison = median_comp,
+          Median_difference = median_diff,
+          P_value = test$p.value,
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+  }
+  
+  return(results)
+}
+
+# Run for all proteins
+cat("Testing", length(protein_cols), "proteins against baseline", ref_time, "...\n")
+
+all_wilcox <- data.frame()
+pb <- txtProgressBar(min = 0, max = length(protein_cols), style = 3)
+
+for(i in 1:length(protein_cols)) {
+  prot_data <- protein_long %>% filter(Protein == protein_cols[i])
+  result <- wilcox_vs_baseline(protein_cols[i], prot_data, ref_time)
+  if(!is.null(result) && nrow(result) > 0) {
+    all_wilcox <- rbind(all_wilcox, result)
+  }
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+cat("\n\nTests completed!\n")
+cat("Total comparisons:", nrow(all_wilcox), "\n\n")
+
+# FDR correction
+all_wilcox <- all_wilcox %>%
+  group_by(Comparison) %>%
+  mutate(FDR = p.adjust(P_value, method = "BH")) %>%
+  ungroup()
+
+# Global FDR
+all_wilcox$FDR_global <- p.adjust(all_wilcox$P_value, method = "BH")
+
+# Significance labels
+all_wilcox <- all_wilcox %>%
+  mutate(
+    Sig_label = case_when(
+      FDR < 0.05 ~ "***",
+      FDR < 0.1 ~ "**",
+      FDR < 0.2 ~ "*",
+      TRUE ~ ""
+    ),
+    Significant = FDR < 0.2,
+    Direction = case_when(
+      Median_difference > 0 ~ "Increased vs baseline",
+      Median_difference < 0 ~ "Decreased vs baseline",
+      TRUE ~ "No change"
+    )
+  )
+
+# Summary
+cat("=== SUMMARY (vs baseline", ref_time, ") ===\n\n")
+
+summary_by_time <- all_wilcox %>%
+  group_by(Comparison) %>%
+  summarise(
+    N_proteins = n(),
+    N_sig = sum(Significant),
+    N_increased = sum(Significant & Median_difference > 0),
+    N_decreased = sum(Significant & Median_difference < 0),
+    .groups = 'drop'
+  )
+
+print(summary_by_time)
+cat("\n")
+
+# Save results
+write.csv(all_wilcox, 
+          paste0("Wilcoxon_vs_", ref_time, "_All_Results.csv"), 
+          row.names = FALSE)
+
+write.csv(summary_by_time, 
+          paste0("Wilcoxon_vs_", ref_time, "_Summary.csv"), 
+          row.names = FALSE)
+
+# ============================================
+# STEP 3: CREATE PLOT WITH CLEAR BASELINE LABEL
+# ============================================
+
+cat("=== Creating Plot ===\n\n")
+
+# Prepare annotations
+mean_expr <- protein_long %>%
+  group_by(Protein, Time) %>%
+  summarise(
+    Mean_Expression = mean(Expression, na.rm = TRUE),
+    Max_Expression = max(Expression, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+plot_annotations <- all_wilcox %>%
+  filter(Significant) %>%
+  left_join(mean_expr, by = c("Protein", "Comparison" = "Time")) %>%
+  mutate(Y_position = Max_Expression * 1.05)
+
+# Create plot
+p_faceted <- ggplot(protein_long, 
+                    aes(x = Time, y = Expression, group = ID)) +
+  
+  # Highlight baseline timepoint
+  annotate("rect", 
+           xmin = as.numeric(factor(ref_time, levels = sort(unique(protein_long$Time)))) - 0.4,
+           xmax = as.numeric(factor(ref_time, levels = sort(unique(protein_long$Time)))) + 0.4,
+           ymin = -Inf, ymax = Inf,
+           fill = "yellow", alpha = 0.1) +
+  
+  # Individual trajectories
+  geom_line(alpha = 0.2, color = "gray70", linewidth = 0.3) +
+  
+  # Mean trajectory
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "red", linewidth = 0.8) +
+  stat_summary(aes(group = 1), fun = mean, geom = "point", 
+               color = "red", size = 1.5) +
+  
+  # Significance annotations
+  geom_text(data = plot_annotations,
+            aes(x = Comparison, y = Y_position, label = Sig_label, group = NULL),
+            color = "blue", size = 3, fontface = "bold",
+            inherit.aes = FALSE) +
+  
+  facet_wrap(~ Protein, scales = "free_y", ncol = 20) +
+  
+  theme_minimal(base_size = 10) +
+  theme(
+    strip.text = element_text(size = 6, face = "bold"),
+    axis.text = element_text(size = 8),
+    panel.spacing = unit(0.1, "lines")
+  ) +
+  
+  labs(
+    title = paste0("Protein Trajectories with Significance vs Baseline (", ref_time, ")"),
+    subtitle = paste0("Yellow background = baseline (", ref_time, 
+                     ") | Blue asterisks = significant vs baseline (* FDR<0.2, ** FDR<0.1, *** FDR<0.05)"),
+    x = "Timepoint",
+    y = "Protein Expression"
+  ) + theme_bw()
+
+print(p_faceted)
+
+ggsave(paste0("Proteins_vs_", ref_time, "_baseline.png"), p_faceted, 
+       width = 30, height = 10, dpi = 300, limitsize = FALSE) #height = 40
+ggsave(paste0("Proteins_vs_", ref_time, "_baseline.pdf"), p_faceted, 
+       width = 30, height = 10, dpi = 300, limitsize = FALSE) #height = 40
+
+cat("✓ Plot saved with", ref_time, "as baseline\n\n")
+
+# ============================================
+# VERIFICATION TABLE
+# ============================================
+
+cat("=== VERIFICATION ===\n\n")
+
+cat("BASELINE TIMEPOINT:", ref_time, "\n\n")
+
+cat("EXAMPLE RESULTS (first protein):\n")
+example <- all_wilcox %>%
+  filter(Protein == protein_cols[1]) %>%
+  select(Protein, Baseline, Comparison, N_pairs, Median_difference, P_value, FDR, Sig_label)
+
+print(example)
+cat("\n")
+
+cat("INTERPRETATION:\n")
+cat("  - 'Baseline' column shows", ref_time, "for all tests\n")
+cat("  - 'Comparison' shows which timepoint is being compared to", ref_time, "\n")
+cat("  - Asterisks (*) appear only when that timepoint differs from", ref_time, "\n\n")
+
+cat("========================================\n\n")
+```
+
+
+#PValue calculation
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# ============================================
+# STEP 1: DIAGNOSE AND FIX DUPLICATES
+# ============================================
+
+cat("=== Diagnosing Data Structure ===\n\n")
+
+# Get protein columns
+protein_cols <- colnames(dx)[12:408]
+
+# Check for duplicates in original data
+duplicates_check <- dx %>%
+  group_by(ID, Time) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  filter(n > 1)
+
+if(nrow(duplicates_check) > 0) {
+  cat("WARNING: Found", nrow(duplicates_check), "duplicate ID-Time combinations\n")
+  cat("First few duplicates:\n")
+  print(head(duplicates_check))
+  cat("\nAveraging duplicates...\n\n")
+  
+  # Average duplicates
+  dx_clean <- dx %>%
+    group_by(ID, Time) %>%
+    summarise(
+      across(all_of(protein_cols), ~mean(.x, na.rm = TRUE)),
+      .groups = 'drop'
+    )
+} else {
+  cat("✓ No duplicates found\n\n")
+  dx_clean <- dx %>%
+    select(ID, Time, all_of(protein_cols))
+}
+
+cat("Clean data dimensions:", dim(dx_clean), "\n")
+cat("Unique ID-Time combinations:", nrow(dx_clean), "\n")
+cat("Timepoints:", paste(unique(dx_clean$Time), collapse = ", "), "\n\n")
+
+# ============================================
+# STEP 2: RESHAPE TO LONG FORMAT
+# ============================================
+
+protein_long <- dx_clean %>%
+  select(ID, Time, all_of(protein_cols)) %>%
+  pivot_longer(
+    cols = all_of(protein_cols),
+    names_to = "Protein",
+    values_to = "Expression"
+  )
+
+cat("Long format created:\n")
+cat("  Total rows:", nrow(protein_long), "\n")
+cat("  Proteins:", length(unique(protein_long$Protein)), "\n")
+cat("  Subjects:", length(unique(protein_long$ID)), "\n\n")
+
+# ============================================
+# STEP 3: WILCOXON TEST - FIXED VERSION
+# ============================================
+
+cat("=== Running Wilcoxon Signed-Rank Tests ===\n\n")
+
+# Function to perform Wilcoxon test for one protein - FIXED
+wilcox_test_protein <- function(protein_name, data_long) {
+  
+  # Get data for this protein
+  protein_data <- data_long %>%
+    filter(Protein == protein_name) %>%
+    select(ID, Time, Expression) %>%
+    # Remove NAs before pivoting
+    filter(!is.na(Expression)) %>%
+    # Average any remaining duplicates
+    group_by(ID, Time) %>%
+    summarise(Expression = mean(Expression, na.rm = TRUE), .groups = 'drop') %>%
+    # Pivot to wide
+    pivot_wider(
+      names_from = Time, 
+      values_from = Expression
+    )
+  
+  # Check what columns we have
+  available_cols <- colnames(protein_data)
+  
+  # Determine reference column name (C1 or T1 or 1, etc.)
+  ref_col <- NULL
+  if("C1" %in% available_cols) {
+    ref_col <- "C1"
+    comp_cols <- c("C2", "C3", "C4", "C5", "C6")
+  } else if("T1" %in% available_cols) {
+    ref_col <- "T1"
+    comp_cols <- c("T2", "T3", "T4", "T5", "T6")
+  } else if("1" %in% available_cols) {
+    ref_col <- "1"
+    comp_cols <- c("2", "3", "4", "5", "6")
+  } else {
+    # Take first column as reference
+    time_cols <- setdiff(available_cols, "ID")
+    if(length(time_cols) > 0) {
+      ref_col <- time_cols[1]
+      comp_cols <- time_cols[-1]
+    } else {
+      return(NULL)
+    }
+  }
+  
+  # Check if reference column exists
+  if(is.null(ref_col) || !ref_col %in% available_cols) {
+    return(NULL)
+  }
+  
+  # Get reference values
+  ref_values <- protein_data[[ref_col]]
+  
+  # Initialize results
+  results <- data.frame(
+    Protein = character(),
+    Comparison = character(),
+    N_pairs = numeric(),
+    Median_Ref = numeric(),
+    Median_Comp = numeric(),
+    Median_Diff = numeric(),
+    Statistic = numeric(),
+    P_value = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Test reference vs each other timepoint
+  for(comp_col in comp_cols) {
+    
+    if(comp_col %in% available_cols) {
+      
+      comp_values <- protein_data[[comp_col]]
+      
+      # Remove pairs with NAs
+      valid_pairs <- !is.na(ref_values) & !is.na(comp_values)
+      ref_clean <- ref_values[valid_pairs]
+      comp_clean <- comp_values[valid_pairs]
+      
+      if(length(ref_clean) >= 5) {  # Need at least 5 pairs
+        
+        tryCatch({
+          # Perform paired Wilcoxon test
+          test_result <- wilcox.test(ref_clean, comp_clean, 
+                                     paired = TRUE, 
+                                     exact = FALSE)
+          
+          # Calculate medians
+          median_ref <- median(ref_clean, na.rm = TRUE)
+          median_comp <- median(comp_clean, na.rm = TRUE)
+          median_diff <- median_comp - median_ref
+          
+          # Store results
+          results <- rbind(results, data.frame(
+            Protein = protein_name,
+            Comparison = paste0(ref_col, "_vs_", comp_col),
+            N_pairs = length(ref_clean),
+            Median_Ref = median_ref,
+            Median_Comp = median_comp,
+            Median_Diff = median_diff,
+            Statistic = as.numeric(test_result$statistic),
+            P_value = test_result$p.value,
+            stringsAsFactors = FALSE
+          ))
+        }, error = function(e) {
+          # Skip this comparison if test fails
+          NULL
+        })
+      }
+    }
+  }
+  
+  return(results)
+}
+
+# Run for all proteins with progress bar
+cat("Testing", length(protein_cols), "proteins...\n")
+
+all_wilcox_results <- data.frame()
+
+pb <- txtProgressBar(min = 0, max = length(protein_cols), style = 3)
+
+for(i in 1:length(protein_cols)) {
+  protein_results <- wilcox_test_protein(protein_cols[i], protein_long)
+  
+  if(!is.null(protein_results) && nrow(protein_results) > 0) {
+    all_wilcox_results <- rbind(all_wilcox_results, protein_results)
+  }
+  
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+cat("\n\nTests completed!\n")
+cat("Total tests performed:", nrow(all_wilcox_results), "\n")
+cat("Unique comparisons:", paste(unique(all_wilcox_results$Comparison), collapse = ", "), "\n\n")
+
+# Check if we have results
+if(nrow(all_wilcox_results) == 0) {
+  stop("No Wilcoxon tests were successfully completed. Check your data structure.")
+}
+
+# ============================================
+# STEP 4: MULTIPLE TESTING CORRECTION
+# ============================================
+
+cat("=== Applying Multiple Testing Correction ===\n\n")
+
+# FDR correction within each comparison
+all_wilcox_results <- all_wilcox_results %>%
+  group_by(Comparison) %>%
+  mutate(FDR = p.adjust(P_value, method = "BH")) %>%
+  ungroup()
+
+# Global FDR
+all_wilcox_results$FDR_global <- p.adjust(all_wilcox_results$P_value, method = "BH")
+
+# Summary by comparison
+summary_by_comparison <- all_wilcox_results %>%
+  group_by(Comparison) %>%
+  summarise(
+    N_tests = n(),
+    Sig_p005 = sum(P_value < 0.05, na.rm = TRUE),
+    Sig_p001 = sum(P_value < 0.01, na.rm = TRUE),
+    Sig_FDR005 = sum(FDR < 0.1, na.rm = TRUE),
+    Sig_FDR01 = sum(FDR < 0.2, na.rm = TRUE),
+    Median_pvalue = median(P_value, na.rm = TRUE),
+    Mean_N_pairs = mean(N_pairs, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+cat("Summary by comparison:\n")
+print(summary_by_comparison)
+cat("\n")
+
+# Save results
+write.csv(all_wilcox_results, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wilcoxon_All_Results.csv", row.names = FALSE)
+write.csv(summary_by_comparison, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wilcoxon_Summary.csv", row.names = FALSE)
+
+cat("Files saved:\n")
+cat("  ✓ Wilcoxon_All_Results.csv\n")
+cat("  ✓ Wilcoxon_Summary.csv\n\n")
+
+# ============================================
+# STEP 5: EXTRACT SIGNIFICANT PROTEINS
+# ============================================
+
+cat("=== Significant Proteins (FDR < 0.2) ===\n\n")
+
+sig_proteins <- all_wilcox_results %>%
+  filter(FDR < 0.2) %>%
+  arrange(Comparison, P_value)
+
+if(nrow(sig_proteins) > 0) {
+  
+  cat("Total significant results:", nrow(sig_proteins), "\n\n")
+  
+  # By comparison
+  sig_by_comp <- sig_proteins %>%
+    group_by(Comparison) %>%
+    summarise(
+      N_sig = n(),
+      N_increased = sum(Median_Diff > 0),
+      N_decreased = sum(Median_Diff < 0),
+      .groups = 'drop'
+    )
+  
+  cat("Breakdown by comparison:\n")
+  print(sig_by_comp)
+  cat("\n")
+  
+  # Save
+  write.csv(sig_proteins, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wilcoxon_Significant_FDR05.csv", row.names = FALSE)
+  
+  # By direction
+  sig_increased <- sig_proteins %>% filter(Median_Diff > 0)
+  sig_decreased <- sig_proteins %>% filter(Median_Diff < 0)
+  
+  write.csv(sig_increased, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wilcoxon_INCREASED.csv", row.names = FALSE)
+  write.csv(sig_decreased, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wilcoxon_DECREASED.csv", row.names = FALSE)
+  
+  cat("Saved:\n")
+  cat("  ✓ Wilcoxon_Significant_FDR05.csv\n")
+  cat("  ✓ Wilcoxon_INCREASED.csv (", nrow(sig_increased), "results )\n")
+  cat("  ✓ Wilcoxon_DECREASED.csv (", nrow(sig_decreased), "results )\n\n")
+  
+} else {
+  cat("No significant proteins found at FDR < 0.05\n")
+  cat("Try relaxing threshold or check if comparisons have enough power\n\n")
+}
+
+# ============================================
+# VISUALIZATION 1: BAR CHART
+# ============================================
+
+cat("=== Creating Visualizations ===\n\n")
+
+# Summary for plotting
+plot_summary <- all_wilcox_results %>%
+  mutate(
+    Significance = case_when(
+      FDR < 0.1 ~ "FDR < 0.1",
+      FDR < 0.2 ~ "FDR < 0.2",
+      P_value < 0.05 ~ "p < 0.05 (nominal)",
+      TRUE ~ "Not Significant"
+    ),
+    Direction = ifelse(Median_Diff > 0, "Increased", "Decreased")
+  ) %>%
+  filter(FDR < 0.2) %>%
+  group_by(Comparison, Direction) %>%
+  summarise(Count = n(), .groups = 'drop')
+
+if(nrow(plot_summary) > 0) {
+  
+  p1 <- ggplot(plot_summary, 
+               aes(x = Comparison, y = Count, fill = Direction)) +
+    geom_bar(stat = "identity", position = "dodge", 
+             color = "black", linewidth = 0.5) +
+    geom_text(aes(label = Count), 
+              position = position_dodge(width = 0.9), 
+              vjust = -0.5, size = 4, fontface = "bold") +
+    scale_fill_manual(values = c("Increased" = "#E53935", 
+                                  "Decreased" = "#1E88E5")) +
+    theme_minimal(base_size = 14) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+      legend.position = "bottom"
+    ) +
+    labs(
+      title = "Significant Proteins by Comparison",
+      subtitle = "Wilcoxon signed-rank test (FDR < 0.2)",
+      x = "Comparison (Reference vs Timepoint)",
+      y = "Number of Significant Proteins",
+      fill = "Direction"
+    ) +
+    ylim(0, max(plot_summary$Count) * 1.15)
+  
+  print(p1)
+  ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wilcoxon_Barplot_Significant.png", p1, 
+         width = 10, height = 7, dpi = 300)
+  
+  cat("✓ Bar plot saved\n")
+}
+
+# ============================================
+# VISUALIZATION 2: P-VALUE DISTRIBUTION
+# ============================================
+
+p2 <- ggplot(all_wilcox_results, aes(x = P_value)) +
+  geom_histogram(bins = 50, fill = "steelblue", 
+                 color = "black", alpha = 0.7) +
+  geom_vline(xintercept = 0.05, color = "red", 
+             linetype = "dashed", linewidth = 1) +
+  facet_wrap(~ Comparison, scales = "free_y") +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Distribution of P-values",
+    subtitle = "Red line = p = 0.05",
+    x = "P-value",
+    y = "Frequency"
+  )
+
+print(p2)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Wilcoxon_Pvalue_Distribution.png", p2, 
+       width = 12, height = 8, dpi = 300)
+cat("✓ P-value distribution saved\n")
+
+# ============================================
+# VISUALIZATION 3: VOLCANO PLOTS
+# ============================================
+
+if(nrow(sig_proteins) > 0) {
+  
+  comparisons <- unique(all_wilcox_results$Comparison)
+  
+  for(comp in comparisons) {
+    
+    comp_data <- all_wilcox_results %>%
+      filter(Comparison == comp) %>%
+      mutate(
+        Sig_category = case_when(
+          FDR < 0.1 ~ "FDR < 0.1",
+          FDR < 0.2 ~ "FDR < 0.2",
+          P_value < 0.05 ~ "p < 0.05",
+          TRUE ~ "Not Significant"
+        )
+      )
+    
+    p_vol <- ggplot(comp_data, 
+                    aes(x = Median_Diff, y = -log10(P_value), 
+                        color = Sig_category)) +
+      geom_point(alpha = 0.6, size = 2) +
+      geom_hline(yintercept = -log10(0.05), 
+                 linetype = "dashed", color = "gray50") +
+      geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+      scale_color_manual(
+        values = c(
+          "FDR < 0.1" = "#D32F2F",
+          "FDR < 0.5" = "#FF6F00",
+          "p < 0.05" = "#FDD835",
+          "Not Significant" = "#BDBDBD"
+        )
+      ) +
+      theme_minimal(base_size = 12) +
+      labs(
+        title = paste("Volcano Plot:", comp),
+        x = "Median Difference",
+        y = "-log10(p-value)",
+        color = "Significance"
+      )
+    
+    ggsave(paste0("Volcano_", comp, ".png"), p_vol, 
+           width = 8, height = 7, dpi = 300)
+  }
+  
+  cat("✓ Volcano plots saved\n")
+}
+
+# ============================================
+# TABLE: TOP PROTEINS
+# ============================================
+
+cat("\n=== Top 20 Proteins per Comparison ===\n\n")
+
+comparisons <- unique(all_wilcox_results$Comparison)
+
+for(comp in comparisons) {
+  
+  top20 <- all_wilcox_results %>%
+    filter(Comparison == comp) %>%
+    arrange(P_value) %>%
+    head(20) %>%
+    select(Protein, N_pairs, Median_Ref, Median_Comp, 
+           Median_Diff, P_value, FDR)
+  
+  write.csv(top20, paste0("Top20_", gsub("_vs_", "_", comp), ".csv"), 
+            row.names = FALSE)
+  
+  cat(comp, "- Top 5:\n")
+  print(head(top20, 5))
+  cat("\n")
+}
+
+# ============================================
+# FINAL SUMMARY
+# ============================================
+
+cat("\n========================================\n")
+cat("WILCOXON TEST ANALYSIS COMPLETE\n")
+cat("========================================\n\n")
+
+cat("SUMMARY:\n")
+cat("  Proteins tested:", length(unique(all_wilcox_results$Protein)), "\n")
+cat("  Total tests:", nrow(all_wilcox_results), "\n")
+cat("  Significant (FDR < 0.05):", nrow(sig_proteins), "\n\n")
+
+if(nrow(sig_proteins) > 0) {
+  cat("BY COMPARISON:\n")
+  for(i in 1:nrow(sig_by_comp)) {
+    cat("  ", sig_by_comp$Comparison[i], ":\n")
+    cat("      Total:", sig_by_comp$N_sig[i], "\n")
+    cat("      Increased:", sig_by_comp$N_increased[i], "\n")
+    cat("      Decreased:", sig_by_comp$N_decreased[i], "\n")
+  }
+}
+
+cat("\n========================================\n\n")
+```
+
+
+
+# ============================================
+# Heatmap
+# ============================================
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# ============================================
+# STEP 1: CHECK AND CLEAN DATA
+# ============================================
+
+cat("=== Checking Data Quality ===\n\n")
+
+# Check for missing values
+cat("Missing values in Timepoint:", sum(is.na(dx$Time)), "\n")
+cat("Missing values in ID:", sum(is.na(dx$ID)), "\n\n")
+
+# Remove rows with missing Timepoint or ID
+aggregated_clean <- dx %>%
+  filter(!is.na(Time), !is.na(ID))
+
+cat("Rows after removing NAs:", nrow(aggregated_clean), "\n")
+cat("Unique Timepoints:", unique(aggregated_clean$Time), "\n\n")
+
+# ============================================
+# STEP 2: DEFINE PROTEINS TO PLOT
+# ============================================
+
+# Find protein columns (adjust based on your data structure)
+# Method 1: By column position
+protein_start <- 12 # Adjust this!
+protein_end <- min(408, ncol(aggregated_clean))  # First 400 or however many exist
+
+protein_end <- min(50, ncol(aggregated_clean))  # First 39 or however many exist
+
+
+protein_cols <- colnames(aggregated_clean)[protein_start:protein_end]
+
+cat("Found", length(protein_cols), "protein columns\n")
+cat("First protein:", protein_cols[1], "\n")
+cat("Last protein:", protein_cols[length(protein_cols)], "\n\n")
+
+# ============================================
+# METHOD 1: HEATMAP - FIXED
+# ============================================
+
+cat("=== Creating Heatmap ===\n")
+
+# Calculate means with proper NA handling
+protein_means <- aggregated_clean %>%
+  select(Time, all_of(protein_cols)) %>%
+  group_by(Time) %>%
+  summarise(across(all_of(protein_cols), ~mean(.x, na.rm = TRUE)),
+            .groups = 'drop')
+
+# Check for any remaining issues
+cat("Timepoint column has NAs:", any(is.na(protein_means$Time)), "\n")
+cat("Timepoints in means:", protein_means$Time, "\n\n")
+
+# Convert to matrix (FIXED - proper handling)
+protein_means_clean <- protein_means %>%
+  filter(!is.na(Time)) %>%
+  as.data.frame()
+
+# Set rownames manually
+rownames(protein_means_clean) <- protein_means_clean$Time
+
+# Remove Timepoint column
+protein_means_clean <- protein_means_clean %>%
+  select(-Time)
+
+# Transpose
+protein_matrix <- t(as.matrix(protein_means_clean))
+
+cat("Matrix dimensions:", dim(protein_matrix), "\n")
+cat("Column names:", colnames(protein_matrix), "\n")
+cat("Any NAs in matrix:", any(is.na(protein_matrix)), "\n\n")
+
+# Scale by row (Z-score normalization)
+protein_scaled <- t(scale(t(protein_matrix)))
+
+# Replace any remaining NaNs with 0
+protein_scaled[is.nan(protein_scaled)] <- 0
+protein_scaled[is.infinite(protein_scaled)] <- 0
+
+# Create heatmap
+library(pheatmap)
+
+tryCatch({
+  pheatmap(
+    protein_scaled,
+    cluster_rows = TRUE,
+    cluster_cols = FALSE,
+    show_rownames = FALSE,
+    show_colnames = TRUE,
+    color = colorRampPalette(c("blue", "white", "red"))(100),
+    main = paste("Heatmap:", length(protein_cols), "Proteins Across Timepoints"),
+    fontsize = 10,
+    cellwidth = 30,
+    cellheight = 1,
+    filename = "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Heatmap_NEG_Proteins.pdf",
+    width = 8,
+    height = 20
+  )
+  cat("✓ Heatmap saved: Heatmap_Proteins.png\n\n")
+}, error = function(e) {
+  cat("Error creating heatmap:", e$message, "\n")
+  cat("Trying alternative method...\n\n")
+})
+```
+
+
+```{r}
+# ============================================
+# METHOD 2: GGPLOT HEATMAP (More robust)
+# ============================================
+
+cat("=== Creating ggplot Heatmap ===\n")
+
+# Reshape to long format
+protein_long <- aggregated_clean %>%
+  select(ID, Time, all_of(protein_cols)) %>%
+  pivot_longer(
+    cols = all_of(protein_cols),
+    names_to = "Protein",
+    values_to = "Expression"
+  ) %>%
+  filter(!is.na(Expression))
+
+cat("Long format created:", nrow(protein_long), "rows\n")
+
+# Calculate means
+heatmap_data <- protein_long %>%
+  group_by(Protein, Time) %>%
+  summarise(Mean_Expression = mean(Expression, na.rm = TRUE),
+            .groups = 'drop') %>%
+  group_by(Protein) %>%
+  mutate(
+    Z_score = if(sd(Mean_Expression, na.rm = TRUE) > 0) {
+      (Mean_Expression - mean(Mean_Expression, na.rm = TRUE)) / sd(Mean_Expression, na.rm = TRUE)
+    } else {
+      0
+    }
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(Z_score), !is.infinite(Z_score))
+
+# Create heatmap
+p_heatmap <- ggplot(heatmap_data, 
+                    aes(x = Time, y = Protein, fill = Z_score)) +
+  geom_tile(color = NA) +
+  scale_fill_gradient2(
+    low = "#2166AC", mid = "white", high = "#B2182B",
+    midpoint = 0,
+    name = "Z-score",
+    limits = c(-3, 3),
+    oob = scales::squish
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = paste("Expression Heatmap:", length(protein_cols), "Proteins"),
+    subtitle = "Each row = one protein, colored by z-scored expression",
+    x = "Timepoint",
+    y = paste(length(protein_cols), "Proteins")
+  )
+
+print(p_heatmap)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Heatmap_ggplot_Proteins.png", p_heatmap, 
+       width = 8, height = 20, dpi = 300)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Heatmap_ggplot_Proteins.pdf", p_heatmap, 
+       width = 5, height = 10, dpi = 300)
+cat("✓ ggplot heatmap saved: Heatmap_ggplot_Proteins.png\n\n")
+
+# ============================================
+# METHOD 3: FACETED PLOT (SUBSET)
+# ============================================
+
+cat("=== Creating Faceted Plot (First 100) ===\n")
+
+# Use only first 100 proteins for faceted view
+proteins_subset <- protein_cols[1:min(100, length(protein_cols))]
+
+subset_long <- protein_long %>%
+  filter(Protein %in% proteins_subset)
+
+p_faceted <- ggplot(subset_long, 
+                    aes(x = Time, y = Expression, group = ID)) +
+  geom_line(alpha = 0.2, color = "gray70", linewidth = 0.3) +
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "red", linewidth = 0.8) +
+  stat_summary(aes(group = 1), fun = mean, geom = "point", 
+               color = "red", size = 1.5) +
+  facet_wrap(~ Protein, scales = "free_y", ncol = 10) +
+  theme_minimal(base_size = 6) +
+  theme(
+    strip.text = element_text(size = 5),
+    axis.text = element_text(size = 4),
+    panel.spacing = unit(0.1, "lines")
+  ) +
+  labs(
+    title = paste("Trajectories for First", length(proteins_subset), "Proteins"),
+    subtitle = "Red = mean trajectory, gray = individual subjects",
+    x = "Timepoint",
+    y = "Expression"
+  )
+
+print(p_faceted)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Faceted_First100_Proteins.png", p_faceted, 
+       width = 20, height = 20, dpi = 300)
+
+cat("✓ Faceted plot saved: Faceted_First100_Proteins.png\n\n")
+
+# ============================================
+# METHOD 4: MEAN TRAJECTORIES OVERLAY
+# ============================================
+
+cat("=== Creating Overlay Plot (Mean Trajectories) ===\n")
+
+# Calculate mean trajectory for each protein
+mean_trajectories <- protein_long %>%
+  group_by(Protein, Time) %>%
+  summarise(Mean_Expression = mean(Expression, na.rm = TRUE),
+            .groups = 'drop') %>%
+  group_by(Protein) %>%
+  mutate(Mean_Scaled = scale(Mean_Expression)[,1]) %>%
+  ungroup()
+
+# Select random subset for visibility
+set.seed(123)
+proteins_to_show <- sample(unique(mean_trajectories$Protein), 
+                          min(50, length(unique(mean_trajectories$Protein))))
+
+mean_subset <- mean_trajectories %>%
+  filter(Protein %in% proteins_to_show)
+
+p_overlay <- ggplot(mean_subset, 
+                    aes(x = Time, y = Mean_Scaled, 
+                        group = Protein, color = Protein)) +
+  geom_line(alpha = 0.6, linewidth = 0.8) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none") +
+  labs(
+    title = "Mean Trajectories: 50 Random Proteins",
+    subtitle = "Z-scored for comparison",
+    x = "Timepoint",
+    y = "Z-scored Expression"
+  )
+
+print(p_overlay)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Overlay_50_Proteins.png", p_overlay, 
+       width = 10, height = 7, dpi = 300)
+
+cat("✓ Overlay plot saved: Overlay_50_Proteins.png\n\n")
+
+# ============================================
+# METHOD 5: SUMMARY STATISTICS
+# ============================================
+
+cat("=== Creating Summary Statistics ===\n")
+
+summary_by_timepoint <- protein_long %>%
+  group_by(Time, Protein) %>%
+  summarise(
+    Mean = mean(Expression, na.rm = TRUE),
+    SD = sd(Expression, na.rm = TRUE),
+    Median = median(Expression, na.rm = TRUE),
+    N = sum(!is.na(Expression)),
+    .groups = 'drop'
+  )
+
+write.csv(summary_by_timepoint, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Protein_Summary_by_Timepoint.csv", row.names = FALSE)
+
+cat("✓ Summary statistics saved: Protein_Summary_by_Timepoint.csv\n\n")
+
+# Overall summary
+overall_summary <- data.frame(
+  Total_Proteins = length(protein_cols),
+  Total_Observations = nrow(protein_long),
+  Timepoints = paste(unique(aggregated_clean$Time), collapse = ", "),
+  Subjects = length(unique(aggregated_clean$ID)),
+  Missing_Values = sum(is.na(protein_long$Expression)),
+  Missing_Percent = round(sum(is.na(protein_long$Expression)) / nrow(protein_long) * 100, 2)
+)
+
+cat("=== Overall Summary ===\n")
+print(overall_summary)
+write.csv(overall_summary, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Overall_Summary.csv", row.names = FALSE)
+
+# ============================================
+# METHOD 6: CLUSTERED HEATMAP (ALTERNATIVE)
+# ============================================
+```
+# ============================================
+# METHOD 6: CLUSTERED HEATMAP (ALTERNATIVE)
+#ComplexHeatmap
+# ============================================
+
+```{r}
+cat("\n=== Creating Clustered Heatmap (Alternative) ===\n")
+
+# Using ComplexHeatmap if available
+if(require(ComplexHeatmap, quietly = TRUE)) {
+  
+  library(ComplexHeatmap)
+  library(circlize)
+  
+  # Create color function
+  col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+  
+  # Create heatmap
+  ht <- Heatmap(
+    protein_scaled,
+    name = "Z-score",
+    col = col_fun,
+    cluster_rows = TRUE,
+    cluster_columns = FALSE,
+    show_row_names =TRUE,
+    show_column_names = TRUE,
+    column_title = paste(length(protein_cols), "Proteins Across Timepoints"),
+    row_title = "Proteins",
+    heatmap_legend_param = list(title = "Z-score")
+  )
+  
+  png("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Heatmap_ComplexHeatmap_Proteins_neg.png", 
+      width = 5, height = 10, units = "in", res = 300)
+    pdf("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/NEG/Heatmap_ComplexHeatmap_Proteins_Neg.pdf", 
+      width = 5, height = 10)
+  draw(ht)
+  dev.off()
+  
+  cat("✓ ComplexHeatmap saved: Heatmap_ComplexHeatmap_Proteins.png\n")
+  
+} else {
+  cat("ComplexHeatmap not available, skipping\n")
+}
+
+# ============================================
+# FINAL SUMMARY
+# ============================================
+
+cat("\n\n========================================\n")
+cat("VISUALIZATION COMPLETE\n")
+cat("========================================\n\n")
+
+cat("FILES CREATED:\n")
+cat("  ✓ Heatmap_Proteins.png (pheatmap)\n")
+cat("  ✓ Heatmap_ggplot_Proteins.png (ggplot)\n")
+cat("  ✓ Faceted_First100_Proteins.png (faceted)\n")
+cat("  ✓ Overlay_50_Proteins.png (overlay)\n")
+cat("  ✓ Protein_Summary_by_Timepoint.csv (data)\n")
+cat("  ✓ Overall_Summary.csv (summary)\n\n")
+
+cat("PROTEINS ANALYZED:", length(protein_cols), "\n")
+cat("TIMEPOINTS:", paste(unique(aggregated_clean$Time), collapse = ", "), "\n")
+cat("SUBJECTS:", length(unique(aggregated_clean$ID)), "\n\n")
+
+cat("========================================\n\n")
+```
+
+```{r}
+# ============================================
+# COMPLETE WORKFLOW FOR 400 PROTEINS
+# ============================================
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# 1. Define which proteins to plot
+protein_cols <- colnames(dx)[12:408]  # Adjust indices!
+
+cat("Plotting", length(protein_cols), "proteins\n\n")
+
+# 2. HEATMAP (best overview for many proteins)
+protein_means_matrix <- dx %>%
+  select(Time, all_of(protein_cols)) %>%
+  group_by(Time) %>%
+  summarise(across(all_of(protein_cols), ~mean(.x, na.rm = TRUE))) %>%
+  column_to_rownames("Time") %>%
+  t()
+
+protein_scaled <- t(scale(t(protein_means_matrix)))
+
+library(pheatmap)
+pheatmap(
+  protein_scaled,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  show_rownames = FALSE,
+  main = "400 Proteins Across Timepoints",
+  filename = "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Heatmap_400_Proteins_Final.png",
+  width = 8,
+  height = 20
+)
+
+cat("✓ Created heatmap\n")
+
+# 3. FACETED PLOT (for detailed view)
+protein_long <- dx%>%
+  select(ID, Time, all_of(protein_cols)) %>%
+  pivot_longer(cols = all_of(protein_cols),
+               names_to = "Protein",
+               values_to = "Expression")
+
+p_faceted <- ggplot(protein_long, 
+                    aes(x = Time, y = Expression, group = ID)) +
+  geom_line(alpha = 0.1, color = "gray70", linewidth = 0.2) +
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "red", linewidth = 0.6) +
+  facet_wrap(~ Protein, scales = "free_y", ncol = 20) +
+  theme_minimal(base_size = 4) +
+  theme(
+    strip.text = element_text(size = 3),
+    axis.text = element_text(size = 3)
+  ) +
+  labs(title = "400 Protein Trajectories", x = "Time", y = "Expression")
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Faceted_400_Proteins_Final.png", p_faceted, 
+       width = 40, height = 40, dpi = 300, limitsize = FALSE)
+
+cat("✓ Created faceted plot\n")
+
+# 4. SUMMARY STATISTICS
+summary_stats <- protein_long %>%
+  group_by(Protein, Time) %>%
+  summarise(
+    Mean = mean(Expression, na.rm = TRUE),
+    SD = sd(Expression, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+write.csv(summary_stats, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/400_Proteins_Summary_Stats.csv", row.names = FALSE)
+
+cat("✓ Saved summary statistics\n")
+cat("\nComplete!\n")
+```
+
+#compare witrh 395 altered proteins in meningful changes
+```{r}
+library(readxl)
+
+dmean<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/result_StreamlitApp/Meaningful_Change1_3/MeanigfulDiff_presistence_burnout/dataExc1C3MeaningfulAcross.csv")
+
+##C1 and C6 values
+dlmerC1C6<- read_excel("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/pathway_annotation.xlsx", sheet = "list")
+meanLmer <- dmean%>%
+  select(any_of(dlmerC1C6$preferredName)) #Q13434, Q5H989
+```
+
+##C1to C6 values burnout
+```{r}
+library(readxl)
+##C1ToT6
+dposLmer<- read_excel ("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/ORA_PosNeg.xlsx", sheet = "Sheet1")
+
+dnegLmer<- read_excel ("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/ORA_PosNeg.xlsx", sheet = "Sheet2")
+## merge with lmer positive and negative 
+
+meanLmer <- dmean%>%
+  select(any_of(dposLmer$UNIPROT)) #Q13434, Q5H989
+
+meanPLmer <- dmean%>%
+  select(any_of(dnegLmer$UNIPROT))  #NA
+
+```
+
+#C1C6valuea burnout
+```{r}
+dlmer<- read_excel("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/pathway_annotation.xlsx", sheet = "list")
+
+meanLmer <- dlmer%>%
+  select(any_of(dlmer$preferredName))  #NA
+
+colnames(meanLmer)
+```
+
+#Box Plot of selected proteins
+ATF4, BDH2, FABP9, and DNAJC21
+
+```{r}
+full_data<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/fullData.csv")
+
+
+rownames(full_dataT)<-full_dataT$X
+
+dex<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/MetaData/burnoutEx.csv")
+rownames(dex)<-dex$X
+
+protein_cols <- colnames(dex)[12:5442]
+
+colnames(dex)[5]<- "Time"
+
+dx_clean <- dex %>%
+  group_by(ID, Time) %>%
+  summarise(across(all_of(protein_cols), ~mean(.x, na.rm = TRUE)), 
+            .groups = 'drop')
+
+proteins_subset<- intersect(colnames(dx_clean), c("P18848", "Q9BUT1", "Q0Z7S8", "Q5F1R6"))
+
+
+
+# Reshape to long format
+protein_lSub<- dx_clean %>%
+  select(ID, Time, all_of(proteins_subset)) %>%
+  pivot_longer(
+    cols = all_of(proteins_subset),
+    names_to = "Protein",
+    values_to = "Expression"
+  )
+```
+
+```{r}
+
+# Plot longitudinal trajectories
+p_faceted <- ggplot(
+  protein_lSub,
+  aes(x = Time, y = Expression, group = ID)
+) +
+  # Individual trajectories
+  geom_line(
+    alpha = 0.2,
+    color = "gray70",
+    linewidth = 0.5
+  ) +
+  # Mean trajectory
+  stat_summary(
+    aes(group = 1),
+    fun = mean,
+    geom = "line",
+    color = "red",
+    linewidth = 0.8
+  ) +
+  stat_summary(
+    aes(group = 1),
+    fun = mean,
+    geom = "point",
+    color = "red",
+    size = 1.5
+  ) +
+  # Facet by protein
+  facet_wrap(
+    ~ Protein,
+    scales = "free_y",
+    ncol = 2
+  ) +
+  # Styling
+  theme_minimal(base_size = 10) +
+  theme(
+    strip.text   = element_text(size = 10),
+    axis.text   = element_text(size = 10),
+    panel.spacing = unit(0.1, "lines")
+  ) + theme_bw()+
+  labs(
+    title = paste(
+      "Longitudinal Trajectories for",
+      length(proteins_subset),
+      "Selected Proteins"
+    ),
+    subtitle = "Gray: individual subjects · Red: mean trajectory",
+    x = "Timepoint",
+    y = "Expression"
+  )
+
+print(p_faceted)
+
+```
+
+```{r}
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/MeaningfulC1C6_Proteins.png", p_faceted, 
+       width = 5, height = 7, dpi = 300)
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/MeaningfulC1C6_Proteins.pdf", p_faceted, 
+       width = 5, height = 8, dpi = 300)
+
+cat("✓ Faceted plot saved: Faceted_First100_Proteins.png\n\n")
+```
+

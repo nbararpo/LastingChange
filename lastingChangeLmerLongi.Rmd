@@ -1,0 +1,3374 @@
+---
+title: "lastingChange_DREAM"
+author: "Nasim Bararpour"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+dex<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/MetaData/burnoutEx.csv")
+rownames(dex)<-dex$X
+```
+
+```{r}
+meta<- dex[c(5438:5442)]
+dEX<- dex[c(6:5432)]
+```
+
+
+```{r}
+# remove all columns that has more than 30% NAs
+percent.na <- function(x){
+  n <- x[is.na(x)] %>% length()
+  return(n/length(x)*100)
+}
+```
+
+#na removal create missingness 
+```{r}
+filt.col <- apply(dEX,2,function(x) percent.na(x)<=30)#feature in column
+filt.dat <-dEX[ ,filt.col]
+
+lEx<-log2(filt.dat+1)
+
+```
+
+#Normalization without replacement 
+```{r}
+meta<- dex[c(5433:5437)]
+dEX<- dex[c(6:5432)]
+
+dEX<- dEX+1
+
+lEx<-sqrt(dEX+1) # final used 
+filt.dat<-dEX
+```
+
+#check distribution
+
+```{r}
+# Single protein comparison
+plot(density(lEx$Q8WTS1, na.rm=TRUE), col="blue", lwd=2, main="Q8WTS1 Distribution")
+lines(density(filt.dat$Q8WTS1, na.rm=TRUE), col="red", lwd=2)
+legend("topright", c("lEx", "filt.dat"), col=c("blue", "red"), lwd=2)
+```
+
+#Side by side box
+
+```{r}
+boxplot(lEx$Q8WTS1, filt.dat$Q8WTS1, 
+        names=c("lEx", "filt.dat"), 
+        col=c("lightblue", "lightcoral"),
+        main="Q8WTS1")
+```
+
+#Scatter Plot with Correlation for large data
+
+```{r}
+# Compare means or medians
+means_lEx <- colMeans(lEx, na.rm=TRUE)
+means_filt <- colMeans(filt.dat, na.rm=TRUE)
+
+plot(means_lEx, means_filt, 
+     xlab="lEx (mean)", ylab="filt.dat (mean)",
+     main="Protein Expression Comparison")
+abline(0, 1, col="red")  # y=x line
+cor_val <- cor(means_lEx, means_filt, use="complete.obs")
+text(min(means_lEx), max(means_filt), 
+     paste("Cor =", round(cor_val, 3)), pos=4)
+```
+
+\MA Plot** (Bland-Altman style)
+
+```{r}
+M <- means_lEx - means_filt  # Difference
+A <- (means_lEx + means_filt) / 2  # Average
+
+plot(A, M, 
+     xlab="Average Expression", 
+     ylab="Difference (lEx - filt.dat)",
+     main="MA Plot")
+abline(h=0, col="red")
+```
+
+For checking normality of distributions, here are the best approaches:
+
+## **Visual Methods:**
+
+### 1. **Q-Q Plot** (Most Reliable Visual Check)
+
+```{r}
+# Single protein
+par(mfrow=c(1,2))
+qqnorm(lEx$Q8WTS1, main="lEx - Q8WTS1")
+qqline(lEx$Q8WTS1, col="red")
+
+qqnorm(filt.dat$Q8WTS1, main="filt.dat - Q8WTS1")
+qqline(filt.dat$Q8WTS1, col="red")
+```
+
+Histogram for normality
+
+```{r}
+par(mfrow=c(1,2))
+
+# lEx
+hist(lEx$Q8WTS1, breaks=20, prob=TRUE, main="lEx", col="lightblue")
+curve(dnorm(x, mean=mean(lEx$Q8WTS1, na.rm=TRUE), 
+            sd=sd(lEx$Q8WTS1, na.rm=TRUE)), 
+      add=TRUE, col="red", lwd=2)
+
+# filt.dat
+hist(filt.dat$Q8WTS1, breaks=20, prob=TRUE, main="filt.dat", col="lightcoral")
+curve(dnorm(x, mean=mean(filt.dat$Q8WTS1, na.rm=TRUE), 
+            sd=sd(filt.dat$Q8WTS1, na.rm=TRUE)), 
+      add=TRUE, col="red", lwd=2)
+```
+
+3\. **Shapiro-Wilk Test** (Most Powerful, n\<5000)
+
+```{r}
+# Single protein
+shapiro.test(lEx$Q8WTS1)
+shapiro.test(filt.dat$Q8WTS1)
+
+# p-value > 0.05 suggests normal distribution
+```
+
+4\. **Anderson-Darling Test** (Better for larger samples)
+
+```{r}
+library(nortest)
+ad.test(lEx$Q8WTS1)
+ad.test(filt.dat$Q8WTS1)
+```
+
+For All 5000 Proteins at Once:
+
+```{r}
+library(nortest)
+
+# Function to test normality
+test_normality <- function(x) {
+  if(length(na.omit(x)) < 3) return(NA)
+  if(length(na.omit(x)) > 5000) {
+    # Use KS test for large samples
+    ks.test(x, "pnorm", mean=mean(x, na.rm=TRUE), sd=sd(x, na.rm=TRUE))$p.value
+  } else {
+    # Use Shapiro-Wilk for smaller samples
+    shapiro.test(na.omit(x))$p.value
+  }
+}
+
+# Test all proteins in both datasets
+pvals_lEx <- sapply(lEx, test_normality)
+pvals_filt <- sapply(filt.dat, test_normality)
+
+# Compare proportion of normally distributed proteins
+sum(pvals_lEx > 0.05, na.rm=TRUE) / sum(!is.na(pvals_lEx))
+sum(pvals_filt > 0.05, na.rm=TRUE) / sum(!is.na(pvals_filt))
+
+# Visualize results
+par(mfrow=c(1,2))
+hist(pvals_lEx, breaks=50, main="lEx - Normality p-values", 
+     xlab="p-value", col="lightblue")
+abline(v=0.05, col="red", lwd=2)
+
+hist(pvals_filt, breaks=50, main="filt.dat - Normality p-values", 
+     xlab="p-value", col="lightcoral")
+abline(v=0.05, col="red", lwd=2)
+```
+
+test normality
+
+Practical Example:
+
+```{r}
+# Test one protein
+p_lEx <- test_normality(lEx$Q8WTS1)
+p_filt <- test_normality(filt.dat$Q8WTS1)
+
+cat("lEx p-value:", p_lEx, "\n")
+cat("filt.dat p-value:", p_filt, "\n")
+
+# Interpretation
+if(p_lEx > 0.05) {
+  cat("lEx: Data appears NORMAL\n")
+} else {
+  cat("lEx: Data is NOT NORMAL\n")
+}
+
+if(p_filt > 0.05) {
+  cat("filt.dat: Data appears NORMAL\n")
+} else {
+  cat("filt.dat: Data is NOT NORMAL\n")
+}
+```
+
+#for all proteins
+
+```{r}
+#lEx<-log2(dEX+100)
+
+
+pvals_lEx <- sapply(lEx, test_normality)
+pvals_filt <- sapply(filt.dat, test_normality)
+
+# Count how many proteins are normally distributed
+normal_count_lEx <- sum(pvals_lEx > 0.05, na.rm=TRUE)
+normal_count_filt <- sum(pvals_filt > 0.05, na.rm=TRUE)
+
+cat("lEx: ", normal_count_lEx, "out of", sum(!is.na(pvals_lEx)), 
+    "proteins are normally distributed\n")
+cat("filt.dat: ", normal_count_filt, "out of", sum(!is.na(pvals_filt)), 
+    "proteins are normally distributed\n")
+
+# As percentages
+pct_lEx <- normal_count_lEx / sum(!is.na(pvals_lEx)) * 100
+pct_filt <- normal_count_filt / sum(!is.na(pvals_filt)) * 100
+
+cat("\nlEx:", round(pct_lEx, 1), "% normally distributed\n")
+cat("filt.dat:", round(pct_filt, 1), "% normally distributed\n")
+```
+
+```{r}
+# Histogram of p-values
+hist(pvals_lEx, breaks=50, 
+     main="Distribution of Normality Test p-values (lEx)",
+     xlab="p-value",
+     col=ifelse(seq(0, 1, length.out=50) > 0.05, "lightgreen", "lightcoral"))
+abline(v=0.05, col="red", lwd=2, lty=2)
+legend("topright", 
+       c("Normal (p>0.05)", "Non-normal (p<0.05)"), 
+       fill=c("lightgreen", "lightcoral"))
+```
+```{r}
+library(DESeq2)
+```
+
+#use sqrt normalize 
+```{r}
+ex<-t(dEX)
+
+library(DESeq2)
+
+# === STEP 1: CLEAN YOUR DATA ===
+
+# Check for NAs
+cat("Checking for NA values...\n")
+cat("lEx NAs:", sum(is.na(lEx)), "\n")
+cat("filt.dat NAs:", sum(is.na(filt.dat)), "\n")
+
+# Option A: Remove rows with ANY NAs
+lEx_clean <- ex[complete.cases(ex), ]
+filt_clean <- filt.dat[complete.cases(filt.dat), ]
+
+# Option B: Replace NAs with 0 (if appropriate for your data)
+# lEx_clean <- lEx
+# lEx_clean[is.na(lEx_clean)] <- 0
+
+cat("\nAfter cleaning:\n")
+cat("lEx: ", nrow(lEx_clean), "proteins,", ncol(lEx_clean), "samples\n")
+cat("filt.dat: ", nrow(filt_clean), "proteins,", ncol(filt_clean), "samples\n")
+
+# === STEP 2: FIX COLUMN/ROW NAMES ===
+
+# Check for empty or problematic names
+cat("\nChecking names...\n")
+cat("lEx column names:", head(colnames(lEx_clean)), "\n")
+cat("lEx row names:", head(rownames(lEx_clean)), "\n")
+
+# Fix if needed
+if(any(colnames(lEx_clean) == "" | is.na(colnames(lEx_clean)))) {
+  colnames(lEx_clean) <- paste0("Sample", 1:ncol(lEx_clean))
+  cat("Fixed empty column names\n")
+}
+
+if(any(rownames(lEx_clean) == "" | is.na(rownames(lEx_clean)))) {
+  rownames(lEx_clean) <- paste0("Protein", 1:nrow(lEx_clean))
+  cat("Fixed empty row names\n")
+}
+
+# === STEP 3: ENSURE INTEGER COUNTS ===
+
+# DESeq2 needs integer counts
+lEx_clean <- round(lEx_clean)
+filt_clean <- round(filt_clean)
+
+# Convert to matrix if needed
+lEx_clean <- as.matrix(lEx_clean)
+filt_clean <- as.matrix(filt_clean)
+
+cat("\nData cleaned successfully!\n")
+```
+
+#check negative
+```{r}
+# Check your data
+cat("=== Data Inspection ===\n")
+cat("lEx range:", range(lEx, na.rm=TRUE), "\n")
+cat("filt.dat range:", range(filt.dat, na.rm=TRUE), "\n")
+cat("lEx has negative values:", any(lEx < 0, na.rm=TRUE), "\n")
+cat("filt.dat has negative values:", any(filt.dat < 0, na.rm=TRUE), "\n")
+cat("lEx has decimals:", any(lEx != floor(lEx), na.rm=TRUE), "\n")
+cat("lEx first few values:\n")
+print(head(lEx[, 1:3]))
+
+# Check distribution
+hist(as.matrix(lEx_clean), breaks=100, main="lEx Distribution")
+```
+
+
+Outcome = Protein levels | Predictors = Time, Sex, Age
+Best Method: limma with duplicateCorrelation
+This handles repeated measures and works with your non-normal, processed data.
+
+
+```{r}
+library(limma)
+
+ex<-t(dEX)
+lEx_clean <- ex[complete.cases(ex), ]
+# ============================================
+# SETUP DATA FOR QUESTION 1
+# ============================================
+
+# 1. Prepare expression matrix
+expr_matrix <- as.matrix(lEx_clean)  # proteins x samples
+# Rows = proteins, Columns = samples (all timepoints for all subjects)
+
+# 2. Create comprehensive metadata
+metadata <- meta
+colnames(metadata)[4]<-"Time"
+
+
+#metadata$Time[metadata$Time== "C1"]<- "T1"
+#metadata$Time[metadata$Time== "C2"]<- "T2"
+#metadata$Time[metadata$Time== "C3"]<- "T3"
+#metadata$Time[metadata$Time== "C4"]<- "T4"
+#metadata$Time[metadata$Time== "C5"]<- "T5"
+#metadata$Time[metadata$Time== "C6"]<- "T6"
+
+metadata$time_numeric<-metadata$Time
+
+metadata$time_numeric[metadata$time_numeric== "C1"] <- "1"
+
+metadata$time_numeric[metadata$time_numeric== "C1"]<- 1
+metadata$time_numeric[metadata$time_numeric== "C2"]<- 2
+metadata$time_numeric[metadata$time_numeric== "C3"]<- 3
+metadata$time_numeric[metadata$time_numeric== "C4"]<- 4
+metadata$time_numeric[metadata$time_numeric== "C5"]<- 5
+metadata$time_numeric[metadata$time_numeric== "C6"]<- 6
+
+
+# Check structure
+head(metadata)
+table(metadata$Time)
+table(metadata$code)
+metadata$sex
+metadata$age
+# ============================================
+# MODEL 1A: Time as Categorical (compare each timepoint)
+# ============================================
+
+# Design matrix
+design <- model.matrix(~ 0 + Time + sex + age, data = metadata)
+colnames(design) <- gsub("Time", "C", colnames(design))
+
+# Account for repeated measures within subjects
+corfit <- duplicateCorrelation(expr_matrix, design, block = metadata$code)
+cat("Intra-subject correlation:", corfit$consensus.correlation, "\n")
+
+# Fit model
+fit <- lmFit(expr_matrix, design, 
+             block = metadata$code,
+             correlation = corfit$consensus)
+
+# Define contrasts (compare timepoints)
+contrast_matrix <- makeContrasts(
+  T2_vs_T1 = C2 - C1,
+  T3_vs_T1 = C3 - C1,
+  T4_vs_T1 = C4 - C1,
+  T5_vs_T1 = C5 - C1,
+  T6_vs_T1 = C6 - C1,
+  T6_vs_T3 = C6 - C3,  # Example: compare specific timepoints
+  Linear_trend = (C6 - C5 + C5 - C4 + C4 - C3 + C3 - C2 + C2 - C1)/5,  # Overall trend
+  levels = design
+)
+
+# Fit contrasts
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2, robust = TRUE)
+
+# Get results for each comparison
+results_T2_vs_T1 <- topTable(fit2, coef="T2_vs_T1", number=Inf)
+results_T6_vs_T1 <- topTable(fit2, coef="T6_vs_T1", number=Inf)
+
+# Summary
+cat("\n=== Proteins changing over time ===\n")
+summary(decideTests(fit2, p.value=0.05))
+
+# Save all results
+for(i in 1:ncol(contrast_matrix)) {
+  contrast_name <- colnames(contrast_matrix)[i]
+  results <- topTable(fit2, coef=i, number=Inf)
+  write.csv(results, paste0("Q1_proteins_", contrast_name, ".csv"))
+}
+
+# ============================================
+# MODEL 1B: Time as Continuous (linear trend)
+# ============================================
+
+# Design with numeric time
+design_numeric <- model.matrix(~ time_numeric + sex + age, data = metadata)
+
+# Fit with repeated measures
+corfit_numeric <- duplicateCorrelation(expr_matrix, design_numeric, 
+                                       block = metadata$subject_id)
+fit_numeric <- lmFit(expr_matrix, design_numeric,
+                     block = metadata$subject_id,
+                     correlation = corfit_numeric$consensus)
+fit_numeric <- eBayes(fit_numeric, robust = TRUE)
+
+# Results for time effect
+results_time_trend <- topTable(fit_numeric, coef="time_numeric", number=Inf)
+
+cat("\n=== Proteins with linear time trend ===\n")
+cat("Significant proteins (FDR < 0.05):", 
+    sum(results_time_trend$adj.P.Val < 0.05), "\n")
+
+write.csv(results_time_trend, "Q1_proteins_linear_time_trend.csv")
+
+# ============================================
+# MODEL 1C: Time + Sex Interaction
+# ============================================
+
+# Test if time effects differ by sex
+design_interaction <- model.matrix(~ 0 + time + sex + time:sex + age, 
+                                   data = metadata)
+
+corfit_int <- duplicateCorrelation(expr_matrix, design_interaction, 
+                                   block = metadata$subject_id)
+fit_int <- lmFit(expr_matrix, design_interaction,
+                 block = metadata$subject_id,
+                 correlation = corfit_int$consensus)
+fit_int <- eBayes(fit_int, robust = TRUE)
+
+# Test interaction terms
+# (Proteins where time effect differs between males and females)
+```
+
+```{r}
+
+dex<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/MetaData/burnoutEx.csv")
+rownames(dex)<-dex$X
+```
+
+Outcome = Burnout | Predictors = Protein levels, Time, Sex, Age
+Best Method: Linear Mixed Models (lme4) - one model per protein
+
+```{r}
+library(lme4)
+library(lmerTest)  # For p-values
+
+meta<- dex[c(5438:5442)]
+dEX<- dex[c(6:5432)]
+expr_matrix <- as.data.frame(dex[, 6:5437]) # no FDR< 0.2
+```
+#no adjusted p-value signofocant
+
+
+Try another transformed data 
+```{r}
+#dEX<-dEX+1
+#try with transformed data 
+lEx<-sqrt(dEX+1) # final used and  lead to only 5 proteins with FDR< 0.2
+```
+
+```{r}
+lEx<-log2(dEX+100) # 6 proteins FDR< 0.2
+```
+
+
+```{r}
+#lEx[is.na(lEx)]< 0
+
+expr_matrix <- as.data.frame(lEx)
+```
+
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(dplyr)
+
+# ============================================
+# STEP 1: PREPARE DATA CORRECTLY
+# ============================================
+
+# Extract metadata and protein data
+meta <- dex[, 5438:5442]  # More explicit column selection
+```
+
+##make burnout value log transformation
+```{r}
+meta$Value<- log2(meta$Value)
+```
+
+
+```{r}
+colnames(meta)
+colnames(meta) <- c("code", "sex", "age", "Time", "Value")  # Name them clearly
+colnames(meta)
+# Protein expression data
+
+cat("=== Data Structure ===\n")
+cat("Samples (rows):", nrow(expr_matrix), "\n")
+cat("Proteins (columns):", ncol(expr_matrix), "\n")
+cat("Metadata rows:", nrow(meta), "\n\n")
+
+# Verify dimensions match
+stopifnot(nrow(expr_matrix) == nrow(meta))
+
+# ============================================
+# STEP 2: CLEAN AND PREPARE METADATA
+# ============================================
+
+# Convert to proper types
+meta$code <- factor(meta$code)          # Subject ID
+meta$Time <- factor(meta$Time)          # Categorical time (T1-T6)
+meta$sex <- factor(meta$sex)            # Sex
+meta$age <- as.numeric(meta$age)        # Age
+meta$burnout <- as.numeric(meta$Value)  # Burnout score
+
+
+
+#meta$Time[meta$Time== "C1"]<- "T1"
+#meta$Time[meta$Time== "C2"]<- "T2"
+#meta$Time[meta$Time== "C3"]<- "T3"
+#meta$Time[meta$Time== "C4"]<- "T4"
+#meta$Time[meta$Time== "C5"]<- "T5"
+#meta$Time[meta$Time== "C6"]<- "T6"
+
+
+
+# Create numeric time variable (1-6)
+meta$time_numeric <- as.numeric(gsub("C", "", meta$Time))
+
+# Check for issues
+cat("=== Data Quality Checks ===\n")
+cat("Missing values in burnout:", sum(is.na(meta$burnout)), "\n")
+cat("Missing values in proteins:", sum(is.na(expr_matrix)), "\n")
+cat("Unique subjects:", length(unique(meta$code)), "\n")
+cat("Observations per subject:\n")
+print(table(table(meta$code)))
+cat("\nTime points:\n")
+print(table(meta$Time))
+cat("\nSex distribution:\n")
+print(table(meta$sex))
+cat("\nAge range:", range(meta$age, na.rm=TRUE), "\n\n")
+```
+# ============================================
+# STEP 3: COMBINE INTO SINGLE DATAFRAME
+# ============================================
+```{r}
+# ============================================
+# STEP 3: COMBINE INTO SINGLE DATAFRAME
+# ============================================
+
+# Your data is ALREADY in long format!
+# Each row = one sample (subject at one timepoint)
+# No reshaping needed!
+library(lme4)
+library(lmerTest)
+full_data <- cbind(meta, expr_matrix)
+write.csv(full_data, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/fullData.csv")
+
+```
+
+
+```{r}
+cat("Combined data dimensions:", dim(full_data), "\n\n")
+
+# ============================================
+# STEP 4: TEST ONE PROTEIN FIRST (Diagnostic)
+# ============================================
+
+cat("=== Testing first protein as example ===\n")
+
+# Get first protein name
+first_protein <- colnames(expr_matrix)[1]
+cat("Testing protein:", first_protein, "\n")
+
+# Create test dataset
+test_data <- data.frame(
+  subject_id = meta$code,
+ # time_numeric = meta$time_numeric,
+  sex = meta$sex,
+  age = meta$age,
+  burnout = meta$burnout,
+  protein_expression = expr_matrix[, first_protein]
+)
+
+# Check for complete cases
+cat("Complete cases:", sum(complete.cases(test_data)), "/", nrow(test_data), "\n")
+
+
+library(lme4)
+library(lmerTest)
+library(dplyr)
+
+# Fit test model
+test_model <- lmer(burnout ~ protein_expression + sex + age + 
+                     (1 | subject_id), #time_numeric +
+                   data = test_data,
+                   REML = FALSE)
+
+cat("\nTest model summary:\n")
+print(summary(test_model))
+
+# ============================================
+# STEP 5: IMPROVED FUNCTION TO TEST PROTEINS
+# ============================================
+
+test_protein_burnout <- function(protein_name, expr_matrix, meta) {
+  
+  # Create data for this protein
+  protein_data <- data.frame(
+    subject_id = meta$code,
+    #time_numeric = meta$time_numeric,
+    sex = meta$sex,
+    age = meta$age,
+    burnout = meta$burnout,
+    protein_expression = expr_matrix[, protein_name],  # FIXED: column subset
+    stringsAsFactors = FALSE
+  )
+  
+  # Remove rows with missing values
+  protein_data <- protein_data[complete.cases(protein_data), ]
+  
+  # Check if enough data
+  if(nrow(protein_data) < 20 || 
+     length(unique(protein_data$subject_id)) < 5) {
+    return(data.frame(
+      estimate = NA, se = NA, t_value = NA, p_value = NA,
+      n_obs = nrow(protein_data), n_subjects = length(unique(protein_data$subject_id)),
+      error = "Insufficient data"
+    ))
+  }
+  
+  # Fit model
+  tryCatch({
+    model <- lmer(burnout ~ protein_expression +  sex + age + 
+                    (1 | subject_id), #time_numeric +
+                  data = protein_data,
+                  REML = FALSE,
+                  control = lmerControl(optimizer = "bobyqa"))
+    
+    # Extract coefficients
+    coefs <- coef(summary(model))
+    protein_row <- coefs["protein_expression", ]
+    
+    result <- data.frame(
+      estimate = protein_row["Estimate"],
+      se = protein_row["Std. Error"],
+      t_value = protein_row["t value"],
+      p_value = protein_row["Pr(>|t|)"],
+      n_obs = nrow(protein_data),
+      n_subjects = length(unique(protein_data$subject_id)),
+      error = NA
+    )
+    
+    return(result)
+    
+  }, error = function(e) {
+    return(data.frame(
+      estimate = NA, se = NA, t_value = NA, p_value = NA,
+      n_obs = nrow(protein_data), 
+      n_subjects = length(unique(protein_data$subject_id)),
+      error = as.character(e$message)
+    ))
+  })
+}
+
+# ============================================
+# STEP 6: RUN FOR ALL PROTEINS
+# ============================================
+
+cat("\n=== Running analysis for all proteins ===\n")
+cat("Testing", ncol(expr_matrix), "proteins...\n\n")
+
+# Initialize results dataframe
+results_q2 <- data.frame(
+  protein = colnames(expr_matrix),  # FIXED: colnames not rownames
+  estimate = NA,
+  se = NA,
+  t_value = NA,
+  p_value = NA,
+  n_obs = NA,
+  n_subjects = NA,
+  error = NA,
+  stringsAsFactors = FALSE
+)
+
+# Progress bar
+pb <- txtProgressBar(min = 0, max = ncol(expr_matrix), style = 3)
+
+# Loop through proteins
+for(i in 1:ncol(expr_matrix)) {
+  
+  protein_name <- colnames(expr_matrix)[i]
+  
+  # Test this protein
+  result <- test_protein_burnout(protein_name, expr_matrix, meta)
+  
+  # Store results
+  results_q2[i, 2:8] <- result
+  
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+# ============================================
+# STEP 7: PROCESS RESULTS
+# ============================================
+
+cat("\n\n=== Processing Results ===\n")
+
+# Check for errors
+n_errors <- sum(!is.na(results_q2$error))
+cat("Models with errors:", n_errors, "\n")
+if(n_errors > 0) {
+  cat("Error types:\n")
+  print(table(results_q2$error, useNA = "ifany"))
+}
+
+# Remove failed models
+results_q2_clean <- results_q2[is.na(results_q2$error) & !is.na(results_q2$p_value), ]
+cat("Successful models:", nrow(results_q2_clean), "\n\n")
+
+# Multiple testing correction
+results_q2_clean$adj_p_value <- p.adjust(results_q2_clean$p_value, method = "BH")
+
+# Sort by significance
+results_q2_clean <- results_q2_clean[order(results_q2_clean$adj_p_value), ]
+
+# ============================================
+# STEP 8: SUMMARY STATISTICS
+# ============================================
+
+cat("=== Results Summary ===\n")
+cat("Total proteins tested:", nrow(results_q2_clean), "\n")
+cat("Significant (FDR <0.2):", 
+    sum(results_q2_clean$adj_p_value < 0.2, na.rm=TRUE), "\n")
+cat("Significant (FDR < 0.20):", 
+    sum(results_q2_clean$adj_p_value < 0.10, na.rm=TRUE), "\n")
+cat("Nominal p < 0.05:", 
+    sum(results_q2_clean$p_value < 0.05, na.rm=TRUE), "\n\n")
+
+# Direction of effects
+sig_proteins <- results_q2_clean[results_q2_clean$adj_p_value < 0.2, ]
+if(nrow(sig_proteins) > 0) {
+  cat("Direction of significant effects:\n")
+  cat("  Positive (higher protein → higher burnout):", 
+      sum(sig_proteins$estimate > 0), "\n")
+  cat("  Negative (higher protein → lower burnout):", 
+      sum(sig_proteins$estimate < 0), "\n\n")
+}
+
+
+```
+# ============================================
+# STEP 9: VISUALIZATIONS
+# ============================================
+
+```{r}
+pdf("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/outcomeBurnoutV3.pdf", width = 8, height = 8)
+# Histogram of p-values
+par(mfrow=c(2,2))
+
+hist(results_q2_clean$p_value, breaks=50, 
+     main="Distribution of P-values",
+     xlab="P-value", col="lightblue")
+abline(v=0.05, col="red", lwd=2, lty=2)
+
+# Q-Q plot of p-values
+qqplot(-log10(1:nrow(results_q2_clean) / nrow(results_q2_clean)),
+       -log10(sort(results_q2_clean$p_value)),
+       xlab="Expected -log10(p)", ylab="Observed -log10(p)",
+       main="Q-Q Plot of P-values")
+abline(0, 1, col="red", lwd=2)
+
+# Volcano plot
+# Volcano plot with labels for top 20 proteins
+plot(results_q2_clean$estimate, 
+     -log10(results_q2_clean$p_value),
+     pch=20, cex=0.5,
+     xlab="Effect Size (Estimate)",
+     ylab="-log10(P-value)",
+     main="Volcano Plot",
+     col=ifelse(results_q2_clean$adj_p_value < 0.2, "red", "gray"))
+abline(h=-log10(0.05), col="blue", lty=2)
+abline(v=c(-0.5, 0.5), col="blue", lty=2)  # Add effect size thresholds
+
+# Add labels for top 20 most significant proteins
+top_n <- 10
+top_proteins <- head(results_q2_clean, top_n)
+
+#text(top_proteins$estimate,
+ #    -log10(top_proteins$adj_p_value),
+    # labels = top_proteins$protein,
+     #cex = 0.6,
+     #pos = 4,  # Position: 1=below, 2=left, 3=above, 4=right
+     #col = "darkred")
+
+legend("bottomright", 
+       c("FDR < 0.2", "Not significant"), 
+       col=c("red", "gray"), pch=19)
+
+# Effect sizes
+hist(results_q2_clean$estimate, breaks=50,
+     main="Distribution of Effect Sizes",
+     xlab="Estimate", col="lightgreen")
+abline(v=0, col="red", lwd=2)
+
+par(mfrow=c(1,1))
+dev.off()
+# ============================================
+# STEP 10: SAVE RESULTS
+# ============================================
+```
+
+
+```{r}
+# Save full results
+write.csv(results_q2_clean, 
+          "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Q2_proteins_Final.csv", row.names=FALSE)
+```
+
+
+#for protrin as outcome 
+```{r}
+lEx<-sqrt(dEX)
+```
+
+```{r}
+#lEx[is.na(lEx)]< 0
+
+expr_matrix <- as.data.frame(lEx)
+```
+
+```{r}
+# MODEL FORMULA:
+Protein_i ~ Burnout + Time + Sex + Age + (1 | Subject_ID)
+
+# Where:
+# ✓ Outcome (Dependent Variable): Protein expression level
+# ✓ Fixed Effects (Independent Variables):
+#   - Burnout (continuous)
+#   - Time_numeric (continuous, 1-6)
+#   - Sex (factor)
+#   - Age (continuous)
+# ✓ Random Effect: (1 | subject_id) = random intercept per subject
+```
+
+```{r}
+library(lme4)
+library(lmerTest)
+
+# ============================================
+# CLARIFIED MODEL STRUCTURE
+# ============================================
+
+test_burnout_to_protein <- function(protein_name, expr_matrix, meta) {
+  
+  # ========================================
+  # STEP 1: Build dataset for THIS protein
+  # ========================================
+  protein_data <- data.frame(
+    # RANDOM EFFECT:
+    subject_id = meta$code,              # Subject identifier (random effect)
+    
+    # FIXED EFFECTS (INDEPENDENT VARIABLES):
+    burnout = meta$burnout,              # Predictor 1: Burnout score
+    #time_numeric = meta$time_numeric,    # Predictor 2: Time (1-6)
+    sex = meta$sex,                      # Predictor 3: Sex (M/F)
+    age = meta$age,                      # Predictor 4: Age (years)
+    
+    # DEPENDENT VARIABLE (OUTCOME):
+    protein_expression = expr_matrix[, protein_name],  # THIS protein's levels
+    
+    stringsAsFactors = FALSE
+  )
+  
+  # Remove missing data
+  protein_data <- protein_data[complete.cases(protein_data), ]
+  
+  # Quality check
+  if(nrow(protein_data) < 20 || length(unique(protein_data$subject_id)) < 5) {
+    return(data.frame(
+      estimate = NA, se = NA, t_value = NA, p_value = NA,
+      n_obs = nrow(protein_data), n_subjects = length(unique(protein_data$subject_id)),
+      error = "Insufficient data"
+    ))
+  }
+  
+  # ========================================
+  # STEP 2: Fit Linear Mixed Model
+  # ========================================
+  # MODEL EQUATION:
+  # protein_expression_ij = β0 + β1*burnout_ij + β2*time_ij + 
+  #                         β3*sex_i + β4*age_i + u_i + ε_ij
+  #
+  # Where:
+  # - i = subject index
+  # - j = timepoint index (1-6)
+  # - u_i = random intercept for subject i ~ N(0, σ²_u)
+  # - ε_ij = residual error ~ N(0, σ²_ε)
+  # ========================================
+  
+  tryCatch({
+    model <- lmer(
+      # OUTCOME ~ PREDICTORS + RANDOM EFFECT
+      protein_expression ~ burnout + sex + age + (1 | subject_id), #time_numeric
+      #        ↑              ↑         ↑           ↑     ↑        ↑
+      #    OUTCOME        PREDICTOR  PREDICTOR   PRED  PRED   RANDOM EFFECT
+      #    (varies by    OF INTEREST (control)  (ctrl)(ctrl) (accounts for
+      #     protein)                                          repeated measures)
+      
+      data = protein_data,
+      REML = FALSE,
+      control = lmerControl(optimizer = "bobyqa")
+    )
+    
+    # ========================================
+    # STEP 3: Extract BURNOUT effect
+    # ========================================
+    coefs <- coef(summary(model))
+    burnout_effect <- coefs["burnout", ]  # Effect of burnout on THIS protein
+    
+    result <- data.frame(
+      estimate = burnout_effect["Estimate"],      # β1: Burnout effect
+      se = burnout_effect["Std. Error"],         # Standard error of β1
+      t_value = burnout_effect["t value"],       # t-statistic
+      p_value = burnout_effect["Pr(>|t|)"],      # p-value for burnout effect
+      n_obs = nrow(protein_data),
+      n_subjects = length(unique(protein_data$subject_id)),
+      error = NA
+    )
+    
+    return(result)
+    
+  }, error = function(e) {
+    return(data.frame(
+      estimate = NA, se = NA, t_value = NA, p_value = NA,
+      n_obs = nrow(protein_data), 
+      n_subjects = length(unique(protein_data$subject_id)),
+      error = as.character(e$message)
+    ))
+  })
+}
+
+# ============================================
+# DEMONSTRATION: Test One Protein First
+# ============================================
+
+cat("=== DEMONSTRATION: Testing One Protein ===\n\n")
+
+# Pick first protein as example
+example_protein <- colnames(expr_matrix)[1]
+
+cat("Testing protein:", example_protein, "\n")
+cat("\nModel formula:\n")
+cat("  ", example_protein, " ~ burnout + time_numeric + sex + age + (1|subject_id)\n\n")
+
+# Build data
+demo_data <- data.frame(
+  subject_id = meta$code,
+  burnout = meta$burnout,
+  #time_numeric = meta$time_numeric,
+  sex = meta$sex,
+  age = meta$age,
+  protein_expression = expr_matrix[, example_protein]
+)
+
+demo_data <- demo_data[complete.cases(demo_data), ]
+
+cat("Data structure for this protein:\n")
+cat("  Observations:", nrow(demo_data), "\n")
+cat("  Unique subjects:", length(unique(demo_data$subject_id)), "\n")
+cat("  Obs per subject:", table(table(demo_data$subject_id)), "\n\n")
+
+# Fit model
+demo_model <- lmer(protein_expression ~ burnout + sex + age +  #time_numeric 
+                     (1 | subject_id),
+                   data = demo_data,
+                   REML = FALSE)
+
+cat("Model summary:\n")
+print(summary(demo_model))
+
+cat("\n\nCoefficients interpretation:\n")
+coefs <- coef(summary(demo_model))
+print(coefs)
+
+cat("\n\nBURNOUT EFFECT (what we're testing):\n")
+cat("  Estimate:", coefs["burnout", "Estimate"], "\n")
+cat("  → For every 1-unit increase in burnout,", 
+    example_protein, "changes by", 
+    round(coefs["burnout", "Estimate"], 4), "units\n")
+cat("  P-value:", coefs["burnout", "Pr(>|t|)"], "\n")
+cat("  → Is this effect significant?", 
+    ifelse(coefs["burnout", "Pr(>|t|)"] < 0.05, "YES", "NO"), "\n\n")
+
+# ============================================
+# NOW RUN FOR ALL PROTEINS
+# ============================================
+
+cat("=== Running for ALL proteins ===\n")
+cat("Each protein will be tested with the same model structure:\n")
+cat("  Protein_i ~ burnout + time_numeric + sex + age + (1|subject_id)\n\n")
+
+results_q2Out <- data.frame(
+  protein = colnames(expr_matrix),
+  estimate = NA,
+  se = NA,
+  t_value = NA,
+  p_value = NA,
+  n_obs = NA,
+  n_subjects = NA,
+  error = NA,
+  stringsAsFactors = FALSE
+)
+
+# Progress bar
+pb <- txtProgressBar(min = 0, max = ncol(expr_matrix), style = 3)
+
+for(i in 1:ncol(expr_matrix)) {
+  protein_name <- colnames(expr_matrix)[i]
+  result <- test_burnout_to_protein(protein_name, expr_matrix, meta)
+  results_q2Out[i, 2:8] <- result
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+# Process results
+results_q2Out_clean <- results_q2Out[is.na(results_q2Out$error) & 
+                                     !is.na(results_q2Out$p_value), ]
+results_q2Out_clean$adj_p_value <- p.adjust(results_q2Out_clean$p_value, 
+                                             method = "BH")
+results_q2Out_clean <- results_q2Out_clean[order(results_q2Out_clean$adj_p_value), ]
+
+cat("\n\n=== RESULTS SUMMARY ===\n")
+cat("Total proteins tested:", nrow(results_q2Out_clean), "\n")
+cat("Significant (FDR < 0.2):", 
+    sum(results_q2Out_clean$adj_p_value < 0.2, na.rm=TRUE), "\n\n")
+
+cat("Top 10 proteins affected by burnout:\n")
+print(head(results_q2Out_clean[, c("protein", "estimate", "p_value", "adj_p_value")], 10))
+```
+
+#categorize and visualize the proteins based on their direction of association with burnout.
+```{r}
+#dx<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Q2_proteins_FinalGeneID.csv")
+
+
+results_q2_clean<-read.csv( "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Q2_proteins_Final.csv", row.names=FALSE)
+```
+
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+
+# ============================================
+# STEP 1: CATEGORIZE SIGNIFICANT PROTEINS
+# ============================================
+
+# Filter significant proteins (FDR < 0.2)
+sig_proteins <- results_q2_clean[results_q2_clean$adj_p_value < 0.2, ]
+
+cat("=== Categorizing Significant Proteins ===\n")
+cat("Total significant proteins (FDR < 0.2):", nrow(sig_proteins), "\n\n")
+
+# Create categories based on direction
+sig_proteins$category <- NA
+
+# POSITIVE ASSOCIATION (estimate > 0)
+# Higher protein → Higher burnout (and vice versa)
+sig_proteins$category[sig_proteins$estimate > 0] <- "Positive Association\n(↑ Protein → ↑ Burnout)"
+
+# NEGATIVE ASSOCIATION (estimate < 0)  
+# Higher protein → Lower burnout (inverse relationship)
+sig_proteins$category[sig_proteins$estimate < 0] <- "Negative Association\n(↑ Protein → ↓ Burnout)"
+
+# Create 4 subcategories for detailed interpretation
+sig_proteins$detailed_category <- NA
+
+# Category 1: Positive estimate - protein increases WITH burnout
+sig_proteins$detailed_category[sig_proteins$estimate > 0] <- 
+  "1. Increases with Burnout\n(Burnout ↑ → Protein ↑)"
+
+# Category 2: Negative estimate - protein decreases WITH burnout  
+sig_proteins$detailed_category[sig_proteins$estimate < 0] <- 
+  "2. Decreases with Burnout\n(Burnout ↑ → Protein ↓)"
+
+# Summary table
+summary_table <- data.frame(
+  Category = c(
+    "Positive Association (↑ Burnout → ↑ Protein)",
+    "Negative Association (↑ Burnout → ↓ Protein)"
+  ),
+  Count = c(
+    sum(sig_proteins$estimate > 0),
+    sum(sig_proteins$estimate < 0)
+  ),
+  Mean_Effect = c(
+    mean(sig_proteins$estimate[sig_proteins$estimate > 0]),
+    mean(sig_proteins$estimate[sig_proteins$estimate < 0])
+  )
+)
+
+cat("Summary of Associations:\n")
+print(summary_table)
+cat("\n")
+
+# ============================================
+# STEP 2: SEPARATE INTO LISTS
+# ============================================
+
+# Positive association: Proteins that INCREASE with burnout
+proteins_increase_with_burnout <- sig_proteins[sig_proteins$estimate > 0, ]
+proteins_increase_with_burnout <- proteins_increase_with_burnout[
+  order(proteins_increase_with_burnout$adj_p_value), ]
+
+# Negative association: Proteins that DECREASE with burnout
+proteins_decrease_with_burnout <- sig_proteins[sig_proteins$estimate < 0, ]
+proteins_decrease_with_burnout <- proteins_decrease_with_burnout[
+  order(proteins_decrease_with_burnout$adj_p_value), ]
+
+cat("=== POSITIVE ASSOCIATION ===\n")
+cat("Proteins that INCREASE when burnout INCREASES:\n")
+cat("Count:", nrow(proteins_increase_with_burnout), "\n")
+cat("\nTop 10:\n")
+print(proteins_increase_with_burnout[1:min(10, nrow(proteins_increase_with_burnout)), 
+                                     c("protein", "estimate", "p_value", "adj_p_value")])
+
+cat("\n\n=== NEGATIVE ASSOCIATION ===\n")
+cat("Proteins that DECREASE when burnout INCREASES:\n")
+cat("Count:", nrow(proteins_decrease_with_burnout), "\n")
+cat("\nTop 10:\n")
+print(proteins_decrease_with_burnout[1:min(10, nrow(proteins_decrease_with_burnout)), 
+                                     c("protein", "estimate", "p_value", "adj_p_value")])
+
+# Save separate files
+write.csv(proteins_increase_with_burnout, 
+          "Proteins_INCREASE_with_Burnout.csv", 
+          row.names = FALSE)
+write.csv(proteins_decrease_with_burnout, 
+          "Proteins_DECREASE_with_Burnout.csv", 
+          row.names = FALSE)
+
+# ============================================
+# VISUALIZATION 1: ENHANCED VOLCANO PLOT
+# ============================================
+
+# Add category for all proteins (including non-significant)
+results_q2_clean$direction_category <- "Not Significant"
+
+results_q2_clean$direction_category[
+  results_q2_clean$adj_p_value < 0.2 & results_q2_clean$estimate > 0
+] <- "↑ Protein with ↑ Burnout"
+
+results_q2_clean$direction_category[
+  results_q2_clean$adj_p_value < 0.2 & results_q2_clean$estimate < 0
+] <- "↓ Protein with ↑ Burnout"
+
+# Label top proteins from each category
+results_q2_clean$protein_label <- ""
+
+# Top 10 positive
+top_positive <- head(proteins_increase_with_burnout, 10)
+results_q2_clean$protein_label[
+  results_q2_clean$protein %in% top_positive$protein
+] <- results_q2_clean$protein[
+  results_q2_clean$protein %in% top_positive$protein
+]
+
+# Top 10 negative
+top_negative <- head(proteins_decrease_with_burnout, 10)
+results_q2_clean$protein_label[
+  results_q2_clean$protein %in% top_negative$protein
+] <- results_q2_clean$protein[
+  results_q2_clean$protein %in% top_negative$protein
+]
+
+# Create volcano plot
+p1 <- ggplot(results_q2_clean, 
+             aes(x = estimate, 
+                 y = -log10(p_value), 
+                 color = direction_category,
+                 label = protein_label)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_hline(yintercept = -log10(0.05), 
+             linetype = "dashed", color = "gray30", linewidth = 0.8) +
+  geom_vline(xintercept = 0, 
+             linetype = "solid", color = "black", linewidth = 0.5) +
+  geom_text_repel(
+    size = 3,
+    max.overlaps = 25,
+    box.padding = 0.5,
+    segment.color = "gray50",
+    fontface = "bold"
+  ) +
+  scale_color_manual(
+    values = c(
+      "↑ Protein with ↑ Burnout" = "#D32F2F",      # Red
+      "↓ Protein with ↑ Burnout" = "#1976D2",      # Blue
+      "Not Significant" = "#BDBDBD"                 # Gray
+    )
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    title = "Protein-Burnout Associations",
+    subtitle = sprintf("Positive: n=%d | Negative: n=%d", 
+                      nrow(proteins_increase_with_burnout),
+                      nrow(proteins_decrease_with_burnout)),
+    x = "Effect Size: Protein Effect on Burnout\n← Lower Burnout | Higher Burnout →",
+    y = "-log10(P-value)",
+    color = "Association Type"
+  ) +
+  annotate("rect", 
+           xmin = 0, xmax = Inf, ymin = -log10(0.05), ymax = Inf,
+           alpha = 0.1, fill = "red") +
+  annotate("rect", 
+           xmin = -Inf, xmax = 0, ymin = -log10(0.05), ymax = Inf,
+           alpha = 0.1, fill = "blue")
+
+print(p1)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/Volcano_Directional_Categories.png", p1, width = 12, height = 9, dpi = 600)
+
+# ============================================
+# VISUALIZATION 2: BAR PLOT OF CATEGORIES
+# ============================================
+
+category_counts <- data.frame(
+  Category = c("Increase with\nBurnout ↑", "Decrease with\nBurnout ↑"),
+  Count = c(nrow(proteins_increase_with_burnout), 
+            nrow(proteins_decrease_with_burnout)),
+  Direction = c("Positive", "Negative")
+)
+
+p2 <- ggplot(category_counts, aes(x = Category, y = Count, fill = Direction)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = Count), vjust = -0.5, size = 6, fontface = "bold") +
+  scale_fill_manual(values = c("Positive" = "#D32F2F", "Negative" = "#1976D2")) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank()
+  ) +
+  labs(
+    title = "Distribution of Protein-Burnout Associations",
+    subtitle = "Significant proteins (FDR < 0.2)",
+    x = "",
+    y = "Number of Proteins"
+  ) +
+  ylim(0, max(category_counts$Count) * 1.2)
+
+print(p2)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/BarPlot_Categories.png", p2, width = 8, height = 6, dpi = 300)
+
+# ============================================
+# VISUALIZATION 3: EFFECT SIZE DISTRIBUTION
+# ============================================
+
+p3 <- ggplot(sig_proteins, aes(x = estimate, fill = category)) +
+  geom_histogram(bins = 30, alpha = 0.7, color = "black") +
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 1) +
+  scale_fill_manual(
+    values = c(
+      "Positive Association\n(↑ Protein → ↑ Burnout)" = "#D32F2F",
+      "Negative Association\n(↑ Protein → ↓ Burnout)" = "#1976D2"
+    )
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Distribution of Effect Sizes by Association Type",
+    subtitle = "Significant proteins (FDR < 0.2)",
+    x = "Effect Size (Estimate)",
+    y = "Number of Proteins",
+    fill = "Association Type"
+  )
+
+print(p3)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/Histogram_EffectSizes.png", p3, width = 10, height = 6, dpi = 300)
+
+# ============================================
+# VISUALIZATION 4: SPLIT VOLCANO PLOTS
+# ============================================
+
+par(mfrow = c(1, 2))
+
+# Plot 1: Positive associations (RED)
+plot(proteins_increase_with_burnout$estimate, 
+     -log10(proteins_increase_with_burnout$p_value),
+     pch = 20, cex = 1.5, col = "#D32F2F",
+     xlim = range(sig_proteins$estimate),
+     ylim = c(0, max(-log10(sig_proteins$p_value)) * 1.1),
+     xlab = "Effect Size",
+     ylab = "-log10(P-value)",
+     main = paste0("POSITIVE Association (n=", 
+                   nrow(proteins_increase_with_burnout), ")\n",
+                   "↑ Protein → ↑ Burnout"))
+abline(h = -log10(0.05), lty = 2, col = "gray50")
+abline(v = 0, lty = 1, col = "black")
+
+# Add labels for top 5
+if(nrow(proteins_increase_with_burnout) >= 5) {
+  top5_pos <- head(proteins_increase_with_burnout, 5)
+  text(top5_pos$estimate, -log10(top5_pos$p_value),
+       labels = top5_pos$protein, pos = 4, cex = 0.7, col = "darkred")
+}
+
+# Plot 2: Negative associations (BLUE)
+plot(proteins_decrease_with_burnout$estimate, 
+     -log10(proteins_decrease_with_burnout$p_value),
+     pch = 20, cex = 1.5, col = "#1976D2",
+     xlim = range(sig_proteins$estimate),
+     ylim = c(0, max(-log10(sig_proteins$p_value)) * 1.1),
+     xlab = "Effect Size",
+     ylab = "-log10(P-value)",
+     main = paste0("NEGATIVE Association (n=", 
+                   nrow(proteins_decrease_with_burnout), ")\n",
+                   "↑ Burnout → ↓ Protein"))
+abline(h = -log10(0.05), lty = 2, col = "gray50")
+abline(v = 0, lty = 1, col = "black")
+
+# Add labels for top 5
+if(nrow(proteins_decrease_with_burnout) >= 5) {
+  top5_neg <- head(proteins_decrease_with_burnout, 5)
+  text(top5_neg$estimate, -log10(top5_neg$p_value),
+       labels = top5_neg$protein, pos = 2, cex = 0.7, col = "darkblue")
+}
+
+par(mfrow = c(1, 1))
+
+# Save as PDF
+pdf("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/SplitVolcano_Positive_Negative.pdf", width = 14, height = 7)
+par(mfrow = c(1, 2))
+# (repeat the two plots above)
+dev.off()
+
+# ============================================
+# VISUALIZATION 5: TOP PROTEINS HEATMAP STYLE
+# ============================================
+
+library(ggplot2)
+
+# Combine top 20 from each category
+top_positive_20 <- head(proteins_increase_with_burnout, 20)
+top_negative_20 <- head(proteins_decrease_with_burnout, 20)
+
+combined_top <- rbind(
+  data.frame(top_positive_20, Direction = "Positive"),
+  data.frame(top_negative_20, Direction = "Negative")
+)
+
+# Order by estimate within each group
+combined_top <- combined_top[order(combined_top$Direction, -combined_top$estimate), ]
+combined_top$protein <- factor(combined_top$protein, 
+                               levels = combined_top$protein)
+
+p5 <- ggplot(combined_top, 
+             aes(x = Direction, y = protein, fill = estimate)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_text(aes(label = sprintf("%.3f", estimate)), 
+            size = 2.5, fontface = "bold") +
+  scale_fill_gradient2(
+    low = "#1976D2", mid = "white", high = "#D32F2F",
+    midpoint = 0,
+    name = "Effect Size"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.y = element_text(size = 8),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Top 20 Proteins in Each Direction",
+    x = "Association Direction",
+    y = "Protein"
+  )
+
+print(p5)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/Heatmap_Top_Proteins.png", p5, width = 8, height = 12, dpi = 300)
+
+# ============================================
+# VISUALIZATION 6: LOLLIPOP CHART
+# ============================================
+
+# Top 15 from each
+top15_pos <- head(proteins_increase_with_burnout, 15)
+top15_neg <- head(proteins_decrease_with_burnout, 15)
+
+combined_top15 <- rbind(
+  data.frame(top15_pos, Direction = "Positive"),
+  data.frame(top15_neg, Direction = "Negative")
+)
+
+combined_top15 <- combined_top15[order(combined_top15$estimate), ]
+combined_top15$protein <- factor(combined_top15$protein, 
+                                 levels = combined_top15$protein)
+
+p6 <- ggplot(combined_top15, 
+             aes(x = estimate, y = protein, color = Direction)) +
+  geom_segment(aes(x = 0, xend = estimate, y = protein, yend = protein),
+               linewidth = 1.2) +
+  geom_point(size = 4) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  scale_color_manual(values = c("Positive" = "#D32F2F", 
+                                 "Negative" = "#1976D2")) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    title = "Top 15 Proteins in Each Direction",
+    subtitle = "Effect of protein on burnout",
+    x = "Effect Size (Estimate)\n← Lower Burnout | Higher Burnout →",
+    y = "",
+    color = "Direction"
+  )
+
+print(p6)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/Lollipop_Top_Proteins.png", p6, width = 10, height = 10, dpi = 300)
+
+# ============================================
+# SUMMARY REPORT
+# ============================================
+
+cat("\n\n========================================\n")
+cat("SUMMARY REPORT: PROTEIN-BURNOUT ASSOCIATIONS\n")
+cat("========================================\n\n")
+
+cat("POSITIVE ASSOCIATIONS (Protein ↑ → Burnout ↑):\n")
+cat("  Total:", nrow(proteins_increase_with_burnout), "proteins\n")
+cat("  Mean effect:", round(mean(proteins_increase_with_burnout$estimate), 4), "\n")
+cat("  Range:", round(range(proteins_increase_with_burnout$estimate), 4), "\n\n")
+
+cat("NEGATIVE ASSOCIATIONS (Protein ↑ → Burnout ↓):\n")
+cat("  Total:", nrow(proteins_decrease_with_burnout), "proteins\n")
+cat("  Mean effect:", round(mean(proteins_decrease_with_burnout$estimate), 4), "\n")
+cat("  Range:", round(range(proteins_decrease_with_burnout$estimate), 4), "\n\n")
+
+cat("FILES SAVED:\n")
+cat("  - Proteins_INCREASE_with_Burnout.csv\n")
+cat("  - Proteins_DECREASE_with_Burnout.csv\n")
+cat("  - Volcano_Directional_Categories.png\n")
+cat("  - BarPlot_Categories.png\n")
+cat("  - Histogram_EffectSizes.png\n")
+cat("  - Heatmap_Top_Proteins.png\n")
+cat("  - Lollipop_Top_Proteins.png\n\n")
+```
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+library(gridExtra)
+
+# ============================================
+# STEP 1: CREATE 4 CATEGORIES
+# ============================================
+
+# Filter significant proteins
+sig_proteins <- results_q2_clean[results_q2_clean$adj_p_value < 0.2, ]
+
+cat("=== Creating 4-Category Classification ===\n")
+cat("Total significant proteins (FDR < 0.2):", nrow(sig_proteins), "\n\n")
+
+# POSITIVE ASSOCIATION (estimate > 0)
+# Both interpretations are TRUE for the same proteins:
+
+# Category 1 & 2: SAME PROTEINS (Positive correlation)
+category_1_2 <- sig_proteins[sig_proteins$estimate > 0, ]
+category_1_2$category_main <- "POSITIVE Association"
+category_1_2$category_1 <- "1. Protein ↑ when Burnout ↑"
+category_1_2$category_2 <- "2. Protein ↓ when Burnout ↓"
+category_1_2$interpretation <- "Protein and Burnout move TOGETHER"
+
+# NEGATIVE ASSOCIATION (estimate < 0)
+# Both interpretations are TRUE for the same proteins:
+
+# Category 3 & 4: SAME PROTEINS (Negative correlation)
+category_3_4 <- sig_proteins[sig_proteins$estimate < 0, ]
+category_3_4$category_main <- "NEGATIVE Association"
+category_3_4$category_1 <- "3. Protein ↓ when Burnout ↑"
+category_3_4$category_2 <- "4. Protein ↑ when Burnout ↓"
+category_3_4$interpretation <- "Protein and Burnout move OPPOSITE"
+
+# Combine
+sig_proteins_categorized <- rbind(category_1_2, category_3_4)
+
+# ============================================
+# SUMMARY TABLE - 4 CATEGORIES
+# ============================================
+
+summary_4cat <- data.frame(
+  Category = c(
+    "1. Protein ↑ when Burnout ↑",
+    "2. Protein ↓ when Burnout ↓",
+    "3. Protein ↓ when Burnout ↑",
+    "4. Protein ↑ when Burnout ↓"
+  ),
+  Relationship = c(
+    "Positive (same proteins as #2)",
+    "Positive (same proteins as #1)",
+    "Negative (same proteins as #4)",
+    "Negative (same proteins as #3)"
+  ),
+  Count = c(
+    nrow(category_1_2),
+    nrow(category_1_2),  # Same count
+    nrow(category_3_4),
+    nrow(category_3_4)   # Same count
+  ),
+  Unique_Proteins = c(
+    nrow(category_1_2),
+    nrow(category_1_2),
+    nrow(category_3_4),
+    nrow(category_3_4)
+  )
+)
+
+cat("=== 4-Category Summary ===\n")
+print(summary_4cat)
+cat("\n")
+
+cat("Note: Categories 1 & 2 represent THE SAME proteins (positive correlation)\n")
+cat("      Categories 3 & 4 represent THE SAME proteins (negative correlation)\n\n")
+
+# ============================================
+# SEPARATE LISTS FOR EACH INTERPRETATION
+# ============================================
+
+# Category 1 & 2: Proteins that increase WITH burnout
+cat1_proteins <- category_1_2[order(category_1_2$adj_p_value), ]
+write.csv(cat1_proteins, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Category1_2_Protein_UP_Burnout_UP.csv", row.names = FALSE)
+
+cat("\n=== CATEGORY 1 & 2 (POSITIVE ASSOCIATION) ===\n")
+cat("Interpretation 1: Protein ↑ when Burnout ↑\n")
+cat("Interpretation 2: Protein ↓ when Burnout ↓\n")
+cat("Count:", nrow(cat1_proteins), "\n")
+cat("Mean effect:", round(mean(cat1_proteins$estimate), 4), "\n\n")
+cat("Top 10:\n")
+print(cat1_proteins[1:min(10, nrow(cat1_proteins)), 
+                    c("protein", "estimate", "p_value", "adj_p_value")])
+
+# Category 3 & 4: Proteins that decrease WITH burnout
+cat3_proteins <- category_3_4[order(category_3_4$adj_p_value), ]
+write.csv(cat3_proteins, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Category3_4_Protein_DOWN_Burnout_UP.csv", row.names = FALSE)
+
+cat("\n\n=== CATEGORY 3 & 4 (NEGATIVE ASSOCIATION) ===\n")
+cat("Interpretation 3: Protein ↓ when Burnout ↑\n")
+cat("Interpretation 4: Protein ↑ when Burnout ↓\n")
+cat("Count:", nrow(cat3_proteins), "\n")
+cat("Mean effect:", round(mean(cat3_proteins$estimate), 4), "\n\n")
+cat("Top 10:\n")
+print(cat3_proteins[1:min(10, nrow(cat3_proteins)), 
+                    c("protein", "estimate", "p_value", "adj_p_value")])
+
+# ============================================
+# VISUALIZATION 1: 4-QUADRANT VOLCANO PLOT
+# ============================================
+
+# Prepare labels
+results_q2_clean$category_4way <- "Not Significant"
+
+results_q2_clean$category_4way[
+  results_q2_clean$adj_p_value < 0.2 & results_q2_clean$estimate > 0
+] <- "Cat 1&2: Protein ↑↔ Burnout ↑"
+
+results_q2_clean$category_4way[
+  results_q2_clean$adj_p_value < 0.2 & results_q2_clean$estimate < 0
+] <- "Cat 3&4: Protein ↓↔ Burnout ↑"
+
+# Label top proteins
+results_q2_clean$protein_label <- ""
+top10_pos <- head(cat1_proteins, 10)
+top10_neg <- head(cat3_proteins, 10)
+
+results_q2_clean$protein_label[results_q2_clean$protein %in% top10_pos$protein] <- 
+  results_q2_clean$protein[results_q2_clean$protein %in% top10_pos$protein]
+results_q2_clean$protein_label[results_q2_clean$protein %in% top10_neg$protein] <- 
+  results_q2_clean$protein[results_q2_clean$protein %in% top10_neg$protein]
+
+# Create volcano plot
+p1 <- ggplot(results_q2_clean, 
+             aes(x = estimate, 
+                 y = -log10(p_value), 
+                 color = category_4way,
+                 label = protein_label)) +
+  geom_point(alpha = 0.6, size = 2.5) +
+  geom_hline(yintercept = -log10(0.05), 
+             linetype = "dashed", color = "gray30", linewidth = 0.8) +
+  geom_vline(xintercept = 0, 
+             linetype = "solid", color = "black", linewidth = 0.8) +
+  
+  # Add quadrant labels
+  annotate("text", x = max(results_q2_clean$estimate, na.rm=TRUE) * 0.7, 
+           y = max(-log10(results_q2_clean$p_value), na.rm=TRUE) * 0.95,
+           label = paste0("Category 1&2\n", 
+                         "Protein ↑ when Burnout ↑\n",
+                         "Protein ↓ when Burnout ↓\n",
+                         "(n=", nrow(cat1_proteins), ")"),
+           size = 4, fontface = "bold", color = "#D32F2F") +
+  
+  annotate("text", x = min(results_q2_clean$estimate, na.rm=TRUE) * 0.7, 
+           y = max(-log10(results_q2_clean$p_value), na.rm=TRUE) * 0.95,
+           label = paste0("Category 3&4\n",
+                         "Protein ↓ when Burnout ↑\n",
+                         "Protein ↑ when Burnout ↓\n",
+                         "(n=", nrow(cat3_proteins), ")"),
+           size = 4, fontface = "bold", color = "#1976D2") +
+  
+  geom_text_repel(
+    size = 3,
+    max.overlaps = 25,
+    box.padding = 0.5,
+    segment.color = "gray50",
+    fontface = "bold"
+  ) +
+  
+  scale_color_manual(
+    values = c(
+      "Cat 1&2: Protein ↑↔ Burnout ↑" = "#D32F2F",
+      "Cat 3&4: Protein ↓↔ Burnout ↑" = "#1976D2",
+      "Not Significant" = "#BDBDBD"
+    )
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    legend.text = element_text(size = 10)
+  ) +
+  
+  labs(
+    title = "Protein-Burnout Associations: 4-Way Interpretation",
+    subtitle = sprintf("Total Significant: %d proteins (FDR < 0.2)", nrow(sig_proteins)),
+    x = "Effect Size: Protein's Effect on Burnout",
+    y = "-log10(P-value)",
+    color = "Category"
+  )
+
+print(p1)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Volcano_4Categories.pdf", p1, width = 14, height = 10, dpi = 600)
+
+# ============================================
+# VISUALIZATION 2: 4-BAR CHART
+# ============================================
+
+# Create data for 4 bars
+bar_data <- data.frame(
+  Category = factor(c(
+    "Cat 1:\nProtein ↑\nBurnout ↑",
+    "Cat 2:\nProtein ↓\nBurnout ↓",
+    "Cat 3:\nProtein ↓\nBurnout ↑",
+    "Cat 4:\nProtein ↑\nBurnout ↓"
+  ), levels = c(
+    "Cat 1:\nProtein ↑\nBurnout ↑",
+    "Cat 2:\nProtein ↓\nBurnout ↓",
+    "Cat 3:\nProtein ↓\nBurnout ↑",
+    "Cat 4:\nProtein ↑\nBurnout ↓"
+  )),
+  Count = c(nrow(cat1_proteins), nrow(cat1_proteins),
+            nrow(cat3_proteins), nrow(cat3_proteins)),
+  Group = c("Positive", "Positive", "Negative", "Negative"),
+  Note = c("Same\nProteins", "Same\nProteins", 
+           "Same\nProteins", "Same\nProteins")
+)
+
+p2 <- ggplot(bar_data, aes(x = Category, y = Count, fill = Group)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black", linewidth = 0.5) +
+  geom_text(aes(label = Count), vjust = -0.5, size = 6, fontface = "bold") +
+  geom_text(aes(label = Note), vjust = 2, size = 3, color = "white", fontface = "italic") +
+  scale_fill_manual(values = c("Positive" = "#D32F2F", "Negative" = "#1976D2")) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.x = element_blank(),
+    axis.text.x = element_text(size = 11, face = "bold")
+  ) +
+  labs(
+    title = "4-Way Categorization of Protein-Burnout Associations",
+    subtitle = "Note: Cat 1&2 are the same proteins | Cat 3&4 are the same proteins",
+    x = "",
+    y = "Number of Proteins",
+    fill = "Relationship Type"
+  ) +
+  ylim(0, max(bar_data$Count) * 1.25)
+
+print(p2)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/BarChart_4Categories.pdf", p2, width = 10, height = 7, dpi = 300)
+
+# ============================================
+# VISUALIZATION 3: SPLIT VIEW WITH 4 PANELS
+# ============================================
+
+# Create 4 separate small volcano plots
+create_category_plot <- function(data, title, color, xlim_range, ylim_range) {
+  ggplot(data, aes(x = estimate, y = -log10(p_value))) +
+    geom_point(color = color, size = 2, alpha = 0.7) +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "gray50") +
+    geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+    theme_minimal(base_size = 10) +
+    xlim(xlim_range) +
+    ylim(ylim_range) +
+    labs(title = title, x = "Effect Size", y = "-log10(P)") +
+    theme(plot.title = element_text(size = 11, face = "bold"))
+}
+
+xlim_range <- range(sig_proteins$estimate)
+ylim_range <- c(0, max(-log10(sig_proteins$p_value)) * 1.1)
+
+p3a <- create_category_plot(
+  cat1_proteins,
+  paste0("Category 1 (n=", nrow(cat1_proteins), ")\nProtein ↑ when Burnout ↑"),
+  "#D32F2F", xlim_range, ylim_range
+)
+
+p3b <- create_category_plot(
+  cat1_proteins,
+  paste0("Category 2 (n=", nrow(cat1_proteins), ")\nProtein ↓ when Burnout ↓\n(Same as Cat 1)"),
+  "#E57373", xlim_range, ylim_range
+)
+
+p3c <- create_category_plot(
+  cat3_proteins,
+  paste0("Category 3 (n=", nrow(cat3_proteins), ")\nProtein ↓ when Burnout ↑"),
+  "#1976D2", xlim_range, ylim_range
+)
+
+p3d <- create_category_plot(
+  cat3_proteins,
+  paste0("Category 4 (n=", nrow(cat3_proteins), ")\nProtein ↑ when Burnout ↓\n(Same as Cat 3)"),
+  "#64B5F6", xlim_range, ylim_range
+)
+
+p3_combined <- grid.arrange(p3a, p3b, p3c, p3d, ncol = 2)
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/FourPanel_Categories.pdf", p3_combined, width = 12, height = 10, dpi = 300)
+
+# ============================================
+# VISUALIZATION 4: DETAILED COMPARISON TABLE
+# ============================================
+
+# Top 15 from each group
+top15_cat12 <- head(cat1_proteins, 15)
+top15_cat34 <- head(cat3_proteins, 15)
+
+# Create comparison dataframe
+comparison_df <- data.frame(
+  Rank = 1:15,
+  Cat1_2_Protein = c(top15_cat12$protein, rep("", 15 - nrow(top15_cat12)))[1:15],
+  Cat1_2_Effect = c(sprintf("%.4f", top15_cat12$estimate), rep("", 15 - nrow(top15_cat12)))[1:15],
+  Cat1_2_FDR = c(sprintf("%.4f", top15_cat12$adj_p_value), rep("", 15 - nrow(top15_cat12)))[1:15],
+  Cat3_4_Protein = c(top15_cat34$protein, rep("", 15 - nrow(top15_cat34)))[1:15],
+  Cat3_4_Effect = c(sprintf("%.4f", top15_cat34$estimate), rep("", 15 - nrow(top15_cat34)))[1:15],
+  Cat3_4_FDR = c(sprintf("%.4f", top15_cat34$adj_p_value), rep("", 15 - nrow(top15_cat34)))[1:15]
+)
+
+write.csv(comparison_df, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Top15_Comparison_4Categories.csv", row.names = FALSE)
+
+cat("\n\n=== Top 15 Comparison ===\n")
+print(comparison_df)
+
+# ============================================
+# VISUALIZATION 5: INTERPRETATION DIAGRAM
+# ============================================
+
+# Create a visual explanation
+explanation_data <- data.frame(
+  x = c(1, 1, 3, 3),
+  y = c(2, 1, 2, 1),
+  label = c(
+    "Category 1:\nProtein ↑\nwhen\nBurnout ↑",
+    "Category 2:\nProtein ↓\nwhen\nBurnout ↓",
+    "Category 3:\nProtein ↓\nwhen\nBurnout ↑",
+    "Category 4:\nProtein ↑\nwhen\nBurnout ↓"
+  ),
+  group = c("Positive", "Positive", "Negative", "Negative"),
+  count = c(nrow(cat1_proteins), nrow(cat1_proteins),
+            nrow(cat3_proteins), nrow(cat3_proteins))
+)
+
+p5 <- ggplot(explanation_data, aes(x = x, y = y, fill = group)) +
+  geom_tile(width = 0.8, height = 0.8, color = "black", linewidth = 1.5) +
+  geom_text(aes(label = paste0(label, "\n\nn = ", count)),
+            size = 5, fontface = "bold", color = "white") +
+  scale_fill_manual(values = c("Positive" = "#D32F2F", "Negative" = "#1976D2")) +
+  annotate("text", x = 1, y = 2.6, label = "SAME\nPROTEINS", 
+           size = 4, fontface = "bold.italic", color = "#D32F2F") +
+  annotate("text", x = 3, y = 2.6, label = "SAME\nPROTEINS", 
+           size = 4, fontface = "bold.italic", color = "#1976D2") +
+  annotate("segment", x = 1, xend = 1, y = 1.5, yend = 1.5,
+           arrow = arrow(ends = "both", length = unit(0.3, "cm")),
+           linewidth = 1.2, color = "#D32F2F") +
+  annotate("segment", x = 3, xend = 3, y = 1.5, yend = 1.5,
+           arrow = arrow(ends = "both", length = unit(0.3, "cm")),
+           linewidth = 1.2, color = "#1976D2") +
+  theme_void() +
+  theme(legend.position = "none") +
+  coord_cartesian(xlim = c(0.5, 3.5), ylim = c(0.5, 3)) +
+  labs(title = "4-Category Interpretation Guide",
+       subtitle = "Two statistical relationships, four interpretations")
+
+print(p5)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Interpretation_Diagram.pdf", p5, width = 10, height = 6, dpi = 300)
+
+# ============================================
+# FINAL SUMMARY REPORT
+# ============================================
+
+cat("\n\n")
+cat("========================================\n")
+cat("FINAL REPORT: 4-CATEGORY CLASSIFICATION\n")
+cat("========================================\n\n")
+
+cat("UNDERSTANDING THE 4 CATEGORIES:\n")
+cat("-------------------------------\n\n")
+
+cat("POSITIVE ASSOCIATION (Same", nrow(cat1_proteins), "proteins):\n")
+cat("  Category 1: Protein ↑ when Burnout ↑\n")
+cat("  Category 2: Protein ↓ when Burnout ↓\n")
+cat("  → These describe the SAME relationship from different angles\n")
+cat("  → Interpretation: Protein and burnout move TOGETHER\n")
+cat("  → Mean effect:", round(mean(cat1_proteins$estimate), 4), "\n\n")
+
+cat("NEGATIVE ASSOCIATION (Same", nrow(cat3_proteins), "proteins):\n")
+cat("  Category 3: Protein ↓ when Burnout ↑\n")
+cat("  Category 4: Protein ↑ when Burnout ↓\n")
+cat("  → These describe the SAME relationship from different angles\n")
+cat("  → Interpretation: Protein and burnout move OPPOSITE\n")
+cat("  → Mean effect:", round(mean(cat3_proteins$estimate), 4), "\n\n")
+
+cat("FILES CREATED:\n")
+cat("--------------\n")
+cat("Data Files:\n")
+cat("  ✓ Category1_2_Protein_UP_Burnout_UP.csv\n")
+cat("  ✓ Category3_4_Protein_DOWN_Burnout_UP.csv\n")
+cat("  ✓ Top15_Comparison_4Categories.csv\n\n")
+
+cat("Visualizations:\n")
+cat("  ✓ Volcano_4Categories.png\n")
+cat("  ✓ BarChart_4Categories.png\n")
+cat("  ✓ FourPanel_Categories.png\n")
+cat("  ✓ Interpretation_Diagram.png\n\n")
+
+cat("========================================\n\n")
+```
+
+###Modeling for 4 categories
+
+```{r}
+
+dex<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/MetaData/burnoutEx.csv")
+rownames(dex)<-dex$X
+```
+
+Outcome = Burnout | Predictors = Protein levels, Time, Sex, Age
+Best Method: Linear Mixed Models (lme4) - one model per protein
+
+```{r}
+library(lme4)
+library(lmerTest)  # For p-values
+
+meta<- dex[c(5438:5442)]
+dEX<- dex[c(6:5432)]
+
+```
+#no adjusted p-value signofocant
+
+
+Try another transformed data 
+```{r}
+#dEX<-dEX+1
+#try with transformed data 
+lEx<-sqrt(dEX+1) # final used and  lead to only 5 proteins with FDR< 0.2
+```
+
+
+```{r}
+#lEx[is.na(lEx)]< 0
+
+expr_matrix <- as.data.frame(lEx)
+```
+
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(dplyr)
+
+# ============================================
+# STEP 1: PREPARE DATA CORRECTLY
+# ============================================
+
+# Extract metadata and protein data
+meta <- dex[, 5438:5442]  # More explicit column selection
+```
+
+
+```{r}
+colnames(meta)
+colnames(meta) <- c("code", "sex", "age", "Time", "Value")  # Name them clearly
+colnames(meta)
+# Protein expression data
+
+cat("=== Data Structure ===\n")
+cat("Samples (rows):", nrow(expr_matrix), "\n")
+cat("Proteins (columns):", ncol(expr_matrix), "\n")
+cat("Metadata rows:", nrow(meta), "\n\n")
+
+# Verify dimensions match
+stopifnot(nrow(expr_matrix) == nrow(meta))
+
+# ============================================
+# STEP 2: CLEAN AND PREPARE METADATA
+# ============================================
+
+# Convert to proper types
+meta$code <- factor(meta$code)          # Subject ID
+meta$Time <- factor(meta$Time)          # Categorical time (T1-T6)
+meta$sex <- factor(meta$sex)            # Sex
+meta$age <- as.numeric(meta$age)        # Age
+meta$burnout <- as.numeric(meta$Value)  # Burnout score
+
+
+
+#meta$Time[meta$Time== "C1"]<- "T1"
+#meta$Time[meta$Time== "C2"]<- "T2"
+#meta$Time[meta$Time== "C3"]<- "T3"
+#meta$Time[meta$Time== "C4"]<- "T4"
+#meta$Time[meta$Time== "C5"]<- "T5"
+#meta$Time[meta$Time== "C6"]<- "T6"
+
+
+
+# Create numeric time variable (1-6)
+meta$time_numeric <- as.numeric(gsub("C", "", meta$Time))
+
+# Check for issues
+cat("=== Data Quality Checks ===\n")
+cat("Missing values in burnout:", sum(is.na(meta$burnout)), "\n")
+cat("Missing values in proteins:", sum(is.na(expr_matrix)), "\n")
+cat("Unique subjects:", length(unique(meta$code)), "\n")
+cat("Observations per subject:\n")
+print(table(table(meta$code)))
+cat("\nTime points:\n")
+print(table(meta$Time))
+cat("\nSex distribution:\n")
+print(table(meta$sex))
+cat("\nAge range:", range(meta$age, na.rm=TRUE), "\n\n")
+```
+
+
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(dplyr)
+
+# ============================================
+# METHOD 1: BIDIRECTIONAL MODELING
+# ============================================
+
+cat("=== BIDIRECTIONAL ANALYSIS ===\n")
+cat("Model 1: Burnout ~ Protein (protein predicts burnout)\n")
+cat("Model 2: Protein ~ Burnout (burnout predicts protein)\n\n")
+
+# Function to test BOTH directions
+test_protein_bidirectional <- function(protein_name, expr_matrix, meta) {
+  
+  protein_data <- data.frame(
+    subject_id = meta$code,
+    sex = meta$sex,
+    age = meta$age,
+    burnout = meta$burnout,
+    protein_expression = expr_matrix[, protein_name],
+    stringsAsFactors = FALSE
+  )
+  
+  protein_data <- protein_data[complete.cases(protein_data), ]
+  
+  if(nrow(protein_data) < 20 || length(unique(protein_data$subject_id)) < 5) {
+    return(data.frame(
+      protein_to_burnout_est = NA, protein_to_burnout_p = NA,
+      burnout_to_protein_est = NA, burnout_to_protein_p = NA,
+      error = "Insufficient data"
+    ))
+  }
+  
+  tryCatch({
+    # Direction 1: Protein → Burnout
+    model1 <- lmer(burnout ~ protein_expression + sex + age + (1 | subject_id),
+                   data = protein_data, REML = FALSE,
+                   control = lmerControl(optimizer = "bobyqa"))
+    
+    coef1 <- coef(summary(model1))
+    protein_to_burnout <- coef1["protein_expression", ]
+    
+    # Direction 2: Burnout → Protein
+    model2 <- lmer(protein_expression ~ burnout + sex + age + (1 | subject_id),
+                   data = protein_data, REML = FALSE,
+                   control = lmerControl(optimizer = "bobyqa"))
+    
+    coef2 <- coef(summary(model2))
+    burnout_to_protein <- coef2["burnout", ]
+    
+    return(data.frame(
+      protein_to_burnout_est = protein_to_burnout["Estimate"],
+      protein_to_burnout_p = protein_to_burnout["Pr(>|t|)"],
+      burnout_to_protein_est = burnout_to_protein["Estimate"],
+      burnout_to_protein_p = burnout_to_protein["Pr(>|t|)"],
+      error = NA
+    ))
+    
+  }, error = function(e) {
+    return(data.frame(
+      protein_to_burnout_est = NA, protein_to_burnout_p = NA,
+      burnout_to_protein_est = NA, burnout_to_protein_p = NA,
+      error = as.character(e$message)
+    ))
+  })
+}
+
+# Run bidirectional analysis
+cat("Running bidirectional analysis...\n")
+results_bidirectional <- data.frame(
+  protein = colnames(expr_matrix),
+  protein_to_burnout_est = NA,
+  protein_to_burnout_p = NA,
+  burnout_to_protein_est = NA,
+  burnout_to_protein_p = NA,
+  error = NA,
+  stringsAsFactors = FALSE
+)
+
+pb <- txtProgressBar(min = 0, max = ncol(expr_matrix), style = 3)
+for(i in 1:ncol(expr_matrix)) {
+  result <- test_protein_bidirectional(colnames(expr_matrix)[i], expr_matrix, meta)
+  results_bidirectional[i, 2:6] <- result
+  setTxtProgressBar(pb, i)
+}
+close(pb)
+
+# Clean results
+results_bidir_clean <- results_bidirectional[
+  is.na(results_bidirectional$error) & 
+  !is.na(results_bidirectional$protein_to_burnout_p), ]
+
+# Adjust p-values
+results_bidir_clean$protein_to_burnout_fdr <- 
+  p.adjust(results_bidir_clean$protein_to_burnout_p, method = "BH")
+results_bidir_clean$burnout_to_protein_fdr <- 
+  p.adjust(results_bidir_clean$burnout_to_protein_p, method = "BH")
+
+# ============================================
+# METHOD 2: CHANGE-BASED CATEGORIZATION
+# ============================================
+
+cat("\n\n=== CHANGE-BASED CATEGORIZATION ===\n")
+cat("Examining actual patterns when burnout increases vs decreases\n\n")
+
+# Function to calculate change patterns
+calculate_change_patterns <- function(protein_name, expr_matrix, meta) {
+  
+  # Create dataframe
+  data <- data.frame(
+    subject_id = meta$code,
+    time = meta$Time,
+    burnout = meta$burnout,
+    protein = expr_matrix[, protein_name]
+  )
+  
+  # Remove NAs
+  data <- data[complete.cases(data), ]
+  
+  # Calculate changes within each subject
+  data <- data %>%
+    arrange(subject_id, time) %>%
+    group_by(subject_id) %>%
+    mutate(
+      burnout_change = burnout - lag(burnout),
+      protein_change = protein - lag(protein)
+    ) %>%
+    filter(!is.na(burnout_change))
+  
+  if(nrow(data) < 10) {
+    return(data.frame(
+      when_burnout_increases_protein = NA,
+      when_burnout_decreases_protein = NA,
+      n_increases = NA,
+      n_decreases = NA,
+      category = "Insufficient data"
+    ))
+  }
+  
+  # Separate increases and decreases in burnout
+  burnout_increases <- data[data$burnout_change > 0, ]
+  burnout_decreases <- data[data$burnout_change < 0, ]
+  
+  # Mean protein change when burnout increases
+  mean_protein_when_burnout_up <- 
+    if(nrow(burnout_increases) > 0) mean(burnout_increases$protein_change, na.rm=TRUE) else NA
+  
+  # Mean protein change when burnout decreases
+  mean_protein_when_burnout_down <- 
+    if(nrow(burnout_decreases) > 0) mean(burnout_decreases$protein_change, na.rm=TRUE) else NA
+  
+  # Determine category
+  category <- "Unclear"
+  
+  if(!is.na(mean_protein_when_burnout_up) && !is.na(mean_protein_when_burnout_down)) {
+    if(mean_protein_when_burnout_up > 0 && mean_protein_when_burnout_down < 0) {
+      category <- "Cat1: Protein↑ when Burnout↑ & Protein↓ when Burnout↓"
+    } else if(mean_protein_when_burnout_up < 0 && mean_protein_when_burnout_down > 0) {
+      category <- "Cat3: Protein↓ when Burnout↑ & Protein↑ when Burnout↓"
+    } else if(mean_protein_when_burnout_up > 0 && mean_protein_when_burnout_down > 0) {
+      category <- "Cat2: Protein↑ regardless of Burnout direction"
+    } else if(mean_protein_when_burnout_up < 0 && mean_protein_when_burnout_down < 0) {
+      category <- "Cat4: Protein↓ regardless of Burnout direction"
+    }
+  }
+  
+  return(data.frame(
+    when_burnout_increases_protein = mean_protein_when_burnout_up,
+    when_burnout_decreases_protein = mean_protein_when_burnout_down,
+    n_increases = nrow(burnout_increases),
+    n_decreases = nrow(burnout_decreases),
+    category = category
+  ))
+}
+
+# Run change analysis
+cat("Analyzing change patterns for all proteins...\n")
+results_changes <- data.frame(
+  protein = colnames(expr_matrix),
+  when_burnout_increases_protein = NA,
+  when_burnout_decreases_protein = NA,
+  n_increases = NA,
+  n_decreases = NA,
+  category = NA,
+  stringsAsFactors = FALSE
+)
+
+pb <- txtProgressBar(min = 0, max = ncol(expr_matrix), style = 3)
+for(i in 1:ncol(expr_matrix)) {
+  result <- calculate_change_patterns(colnames(expr_matrix)[i], expr_matrix, meta)
+  results_changes[i, 2:6] <- result
+  setTxtProgressBar(pb, i)
+}
+close(pb)
+
+# ============================================
+# COMBINE RESULTS AND CATEGORIZE
+# ============================================
+
+# Merge both approaches
+final_results <- merge(results_q2_clean, results_changes, by = "protein")
+final_results <- merge(final_results, results_bidir_clean, by = "protein")
+
+# Create 4 categories based on COMBINED criteria
+final_results$final_category <- "Not Categorized"
+
+# Significance threshold
+sig_threshold <- 0.2
+
+# Category 1: Protein ↑ when Burnout ↑ (AND vice versa)
+final_results$final_category[
+  final_results$adj_p_value < sig_threshold &
+  final_results$estimate > 0 &
+  final_results$burnout_to_protein_fdr < sig_threshold &
+  final_results$burnout_to_protein_est > 0 &
+  final_results$when_burnout_increases_protein > 0
+] <- "Category 1: Protein↑ with Burnout↑"
+
+# Category 2: Protein ↓ when Burnout ↓ (protective - goes down when burnout decreases)
+final_results$final_category[
+  final_results$adj_p_value < sig_threshold &
+  final_results$estimate > 0 &
+  final_results$burnout_to_protein_fdr < sig_threshold &
+  final_results$burnout_to_protein_est > 0 &
+  final_results$when_burnout_decreases_protein < 0
+] <- "Category 2: Protein↓ when Burnout↓"
+
+# Category 3: Protein ↓ when Burnout ↑ (protective)
+final_results$final_category[
+  final_results$adj_p_value < sig_threshold &
+  final_results$estimate < 0 &
+  final_results$burnout_to_protein_fdr < sig_threshold &
+  final_results$burnout_to_protein_est < 0 &
+  final_results$when_burnout_increases_protein < 0
+] <- "Category 3: Protein↓ when Burnout↑"
+
+# Category 4: Protein ↑ when Burnout ↓ (resilience marker)
+final_results$final_category[
+  final_results$adj_p_value < sig_threshold &
+  final_results$estimate < 0 &
+  final_results$burnout_to_protein_fdr < sig_threshold &
+  final_results$burnout_to_protein_est < 0 &
+  final_results$when_burnout_decreases_protein > 0
+] <- "Category 4: Protein↑ when Burnout↓"
+
+# ============================================
+# EXTRACT 4 DISTINCT LISTS
+# ============================================
+
+cat("\n\n=== 4 DISTINCT CATEGORIES ===\n\n")
+
+# Category 1
+cat1_distinct <- final_results[final_results$final_category == "Category 1: Protein↑ with Burnout↑", ]
+cat1_distinct <- cat1_distinct[order(cat1_distinct$adj_p_value), ]
+
+cat("CATEGORY 1: Proteins that INCREASE when Burnout INCREASES\n")
+cat("Count:", nrow(cat1_distinct), "\n")
+if(nrow(cat1_distinct) > 0) {
+  cat("Top 5:\n")
+  print(cat1_distinct[1:min(5, nrow(cat1_distinct)), 
+                      c("protein", "estimate", "adj_p_value")])
+}
+cat("\n")
+
+# Category 2
+cat2_distinct <- final_results[final_results$final_category == "Category 2: Protein↓ when Burnout↓", ]
+cat2_distinct <- cat2_distinct[order(cat2_distinct$adj_p_value), ]
+
+cat("CATEGORY 2: Proteins that DECREASE when Burnout DECREASES\n")
+cat("Count:", nrow(cat2_distinct), "\n")
+if(nrow(cat2_distinct) > 0) {
+  cat("Top 5:\n")
+  print(cat2_distinct[1:min(5, nrow(cat2_distinct)), 
+                      c("protein", "estimate", "adj_p_value")])
+}
+cat("\n")
+
+# Category 3
+cat3_distinct <- final_results[final_results$final_category == "Category 3: Protein↓ when Burnout↑", ]
+cat3_distinct <- cat3_distinct[order(cat3_distinct$adj_p_value), ]
+
+cat("CATEGORY 3: Proteins that DECREASE when Burnout INCREASES\n")
+cat("Count:", nrow(cat3_distinct), "\n")
+if(nrow(cat3_distinct) > 0) {
+  cat("Top 5:\n")
+  print(cat3_distinct[1:min(5, nrow(cat3_distinct)), 
+                      c("protein", "estimate", "adj_p_value")])
+}
+cat("\n")
+
+# Category 4
+cat4_distinct <- final_results[final_results$final_category == "Category 4: Protein↑ when Burnout↓", ]
+cat4_distinct <- cat4_distinct[order(cat4_distinct$adj_p_value), ]
+
+cat("CATEGORY 4: Proteins that INCREASE when Burnout DECREASES\n")
+cat("Count:", nrow(cat4_distinct), "\n")
+if(nrow(cat4_distinct) > 0) {
+  cat("Top 5:\n")
+  print(cat4_distinct[1:min(5, nrow(cat4_distinct)), 
+                      c("protein", "estimate", "adj_p_value")])
+}
+cat("\n")
+
+# Save separate files
+write.csv(cat1_distinct, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/FourCategory/Category1_Protein_UP_Burnout_UP_DISTINCT.csv", row.names = FALSE)
+write.csv(cat2_distinct, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/FourCategory/Category2_Protein_DOWN_Burnout_DOWN_DISTINCT.csv", row.names = FALSE)
+write.csv(cat3_distinct, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/FourCategory/Category3_Protein_DOWN_Burnout_UP_DISTINCT.csv", row.names = FALSE)
+write.csv(cat4_distinct, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/FourCategory/Category4_Protein_UP_Burnout_DOWN_DISTINCT.csv", row.names = FALSE)
+
+# Summary table
+summary_4cat_distinct <- data.frame(
+  Category = c(
+    "Category 1: Protein ↑ when Burnout ↑",
+    "Category 2: Protein ↓ when Burnout ↓",
+    "Category 3: Protein ↓ when Burnout ↑",
+    "Category 4: Protein ↑ when Burnout ↓"
+  ),
+  Count = c(
+    nrow(cat1_distinct),
+    nrow(cat2_distinct),
+    nrow(cat3_distinct),
+    nrow(cat4_distinct)
+  )
+)
+
+cat("\n=== SUMMARY TABLE ===\n")
+print(summary_4cat_distinct)
+
+# ============================================
+# VISUALIZATION: 4 DISTINCT CATEGORIES
+# ============================================
+
+library(ggplot2)
+
+# Bar plot
+p_bar <- ggplot(summary_4cat_distinct, 
+                aes(x = reorder(Category, -Count), y = Count, fill = Category)) +
+  geom_bar(stat = "identity", color = "black", linewidth = 0.5) +
+  geom_text(aes(label = Count), vjust = -0.5, size = 6, fontface = "bold") +
+  scale_fill_manual(values = c(
+    "Category 1: Protein ↑ when Burnout ↑" = "#D32F2F",
+    "Category 2: Protein ↓ when Burnout ↓" = "#FF6F00",
+    "Category 3: Protein ↓ when Burnout ↑" = "#1976D2",
+    "Category 4: Protein ↑ when Burnout ↓" = "#388E3C"
+  )) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10)
+  ) +
+  labs(
+    title = "4 Distinct Categories Based on Change Patterns",
+    x = "",
+    y = "Number of Proteins"
+  )
+
+print(p_bar)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/Details_posneg/FourCategory/BarPlot_4_DISTINCT_Categories.pdf", p_bar, width = 12, height = 8, dpi = 300)
+
+cat("\n=== ANALYSIS COMPLETE ===\n")
+cat("Four distinct protein lists created based on actual change patterns!\n")
+```
+
+##only C1 and C6
+
+
+```{r}
+library(lme4)
+library(lmerTest)  # For p-values
+colnames(dex)
+dexC1_6<- dex %>% filter(Time.x %in% c("C1", "C6"))
+
+
+metaC1_C6<- dexC1_6[c(5438:5442)]
+expr_matrixC1_C6 <- as.data.frame(dexC1_6[, 6:5437]) # no FDR< 0.2
+```
+#no adjusted p-value signofocant
+
+
+Try another transformed data 
+```{r}
+#dEX<-dEX+1
+#try with transformed data 
+lEx<-sqrt(expr_matrixC1_C6+1) # final used and  lead to only 5 proteins with FDR< 0.2
+expr_matrix <- as.data.frame(lEx)
+```
+
+```{r}
+
+
+
+cat("Combined data dimensions:", dim(full_data), "\n\n")
+
+# ============================================
+# STEP 4: TEST ONE PROTEIN FIRST (Diagnostic)
+# ============================================
+
+cat("=== Testing first protein as example ===\n")
+
+# Get first protein name
+first_protein <- colnames(expr_matrix)[1]
+cat("Testing protein:", first_protein, "\n")
+
+# Create test dataset
+test_data <- data.frame(
+  subject_id = metaC1_C6$code,
+ # time_numeric = meta$time_numeric,
+  sex = metaC1_C6$sex,
+  age = metaC1_C6$age,
+  burnout = metaC1_C6$Value,
+  protein_expression = expr_matrix[, first_protein]
+)
+
+# Check for complete cases
+cat("Complete cases:", sum(complete.cases(test_data)), "/", nrow(test_data), "\n")
+
+
+library(lme4)
+library(lmerTest)
+library(dplyr)
+
+# Fit test model
+test_model <- lmer(burnout ~ protein_expression + sex + age + 
+                     (1 | subject_id), #time_numeric +
+                   data = test_data,
+                   REML = FALSE)
+
+cat("\nTest model summary:\n")
+print(summary(test_model))
+
+# ============================================
+# STEP 5: IMPROVED FUNCTION TO TEST PROTEINS
+# ============================================
+
+test_protein_burnout <- function(protein_name, expr_matrix, meta) {
+  
+  # Create data for this protein
+  protein_data <- data.frame(
+    subject_id = metaC1_C6$code,
+    #time_numeric = meta$time_numeric,
+    sex = metaC1_C6$sex,
+    age = metaC1_C6$age,
+    burnout = metaC1_C6$Value,
+    protein_expression = expr_matrix[, protein_name],  # FIXED: column subset
+    stringsAsFactors = FALSE
+  )
+  
+  # Remove rows with missing values
+  #protein_data <- protein_data[complete.cases(protein_data), ]
+  
+  # Check if enough data
+  if(nrow(protein_data) < 20 || 
+     length(unique(protein_data$subject_id)) < 5) {
+    return(data.frame(
+      estimate = NA, se = NA, t_value = NA, p_value = NA,
+      n_obs = nrow(protein_data), n_subjects = length(unique(protein_data$subject_id)),
+      error = "Insufficient data"
+    ))
+  }
+  
+  # Fit model
+  tryCatch({
+    model <- lmer(burnout ~ protein_expression +  sex + age + 
+                    (1 | subject_id), #time_numeric +
+                  data = protein_data,
+                  REML = FALSE,
+                  control = lmerControl(optimizer = "bobyqa"))
+    
+    # Extract coefficients
+    coefs <- coef(summary(model))
+    protein_row <- coefs["protein_expression", ]
+    
+    result <- data.frame(
+      estimate = protein_row["Estimate"],
+      se = protein_row["Std. Error"],
+      t_value = protein_row["t value"],
+      p_value = protein_row["Pr(>|t|)"],
+      n_obs = nrow(protein_data),
+      n_subjects = length(unique(protein_data$subject_id)),
+      error = NA
+    )
+    
+    return(result)
+    
+  }, error = function(e) {
+    return(data.frame(
+      estimate = NA, se = NA, t_value = NA, p_value = NA,
+      n_obs = nrow(protein_data), 
+      n_subjects = length(unique(protein_data$subject_id)),
+      error = as.character(e$message)
+    ))
+  })
+}
+
+# ============================================
+# STEP 6: RUN FOR ALL PROTEINS
+# ============================================
+
+cat("\n=== Running analysis for all proteins ===\n")
+cat("Testing", ncol(expr_matrix), "proteins...\n\n")
+
+# Initialize results dataframe
+results_q2C1C6 <- data.frame(
+  protein = colnames(expr_matrix),  # FIXED: colnames not rownames
+  estimate = NA,
+  se = NA,
+  t_value = NA,
+  p_value = NA,
+  n_obs = NA,
+  n_subjects = NA,
+  error = NA,
+  stringsAsFactors = FALSE
+)
+
+# Progress bar
+pb <- txtProgressBar(min = 0, max = ncol(expr_matrix), style = 3)
+
+# Loop through proteins
+for(i in 1:ncol(expr_matrix)) {
+  
+  protein_name <- colnames(expr_matrix)[i]
+  
+  # Test this protein
+  resultC1C6 <- test_protein_burnout(protein_name, expr_matrix, meta)
+  
+  # Store results
+  results_q2C1C6[i, 2:8] <- resultC1C6
+  
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+# ============================================
+# STEP 7: PROCESS RESULTS
+# ============================================
+
+cat("\n\n=== Processing Results ===\n")
+
+# Check for errors
+n_errors <- sum(!is.na(results_q2C1C6$error))
+cat("Models with errors:", n_errors, "\n")
+if(n_errors > 0) {
+  cat("Error types:\n")
+  print(table(results_q2C1C6$error, useNA = "ifany"))
+}
+
+# Remove failed models
+results_q2_cleanC1C6 <- results_q2C1C6[is.na(results_q2C1C6$error) & !is.na(results_q2C1C6$p_value), ]
+cat("Successful models:", nrow(results_q2_clean), "\n\n")
+
+# Multiple testing correction
+results_q2_cleanC1C6$adj_p_value <- p.adjust(results_q2_cleanC1C6$p_value, method = "BH")
+
+# Sort by significance
+results_q2_cleanC1C6 <-results_q2_cleanC1C6[order(results_q2_cleanC1C6$adj_p_value), ]
+
+# ============================================
+# STEP 8: SUMMARY STATISTICS
+# ============================================
+
+cat("=== Results Summary ===\n")
+cat("Total proteins tested:", nrow(results_q2_clean), "\n")
+cat("Significant (FDR <0.2):", 
+    sum(results_q2_clean$adj_p_value < 0.2, na.rm=TRUE), "\n")
+cat("Significant (FDR < 0.20):", 
+    sum(results_q2_clean$adj_p_value < 0.10, na.rm=TRUE), "\n")
+cat("Nominal p < 0.05:", 
+    sum(results_q2_clean$p_value < 0.05, na.rm=TRUE), "\n\n")
+
+# Direction of effects
+sig_proteins <- results_q2_clean[results_q2_clean$adj_p_value < 0.2, ]
+if(nrow(sig_proteins) > 0) {
+  cat("Direction of significant effects:\n")
+  cat("  Positive (higher protein → higher burnout):", 
+      sum(sig_proteins$estimate > 0), "\n")
+  cat("  Negative (higher protein → lower burnout):", 
+      sum(sig_proteins$estimate < 0), "\n\n")
+}
+
+write.csv(results_q2_cleanC1C6, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/results_q2_cleanC1C6.csv")
+```
+
+```{r}
+results_q2_clean<-read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/results_q2_cleanC1C6.csv")
+```
+
+```{r}
+# ============================================
+# STEP 1: CATEGORIZE SIGNIFICANT PROTEINS
+# ============================================
+
+# Filter significant proteins (FDR < 0.2)
+sig_proteins <- results_q2_clean[results_q2_clean$adj_p_value < 0.2, ]
+
+cat("=== Categorizing Significant Proteins ===\n")
+cat("Total significant proteins (FDR < 0.2):", nrow(sig_proteins), "\n\n")
+
+# Create categories based on direction
+sig_proteins$category <- NA
+
+# POSITIVE ASSOCIATION (estimate > 0)
+# Higher protein → Higher burnout (and vice versa)
+sig_proteins$category[sig_proteins$estimate > 0] <- "Positive Association\n(↑ Protein → ↑ Burnout)\n(↓ Protein → ↓ Burnout)"
+
+# NEGATIVE ASSOCIATION (estimate < 0)  
+# Higher protein → Lower burnout (inverse relationship)
+sig_proteins$category[sig_proteins$estimate < 0] <- "Negative Association\n(↑ Protein → ↓ Burnout)\n(↓ Protein → ↑ Burnout)"
+
+# Create 4 subcategories for detailed interpretation
+sig_proteins$detailed_category <- NA
+
+# Category 1: Positive estimate - protein increases WITH burnout
+sig_proteins$detailed_category[sig_proteins$estimate > 0] <- 
+  "1. Increases with Burnout\n(Burnout ↑ → Protein ↑)"
+
+# Category 2: Negative estimate - protein decreases WITH burnout  
+sig_proteins$detailed_category[sig_proteins$estimate < 0] <- 
+  "2. Decreases with Burnout\n(Burnout ↑ → Protein ↓)"
+
+# Summary table
+summary_table <- data.frame(
+  Category = c(
+    "Positive Association (↑ Protein → ↑ Burnout)\n(↓ Protein → ↓ Burnout)",
+    "Negative Association (↑ Protein → ↓ Burnout)\n(↓ Protein → ↑ Burnout)"
+  ),
+  Count = c(
+    sum(sig_proteins$estimate > 0),
+    sum(sig_proteins$estimate < 0)
+  ),
+  Mean_Effect = c(
+    mean(sig_proteins$estimate[sig_proteins$estimate > 0]),
+    mean(sig_proteins$estimate[sig_proteins$estimate < 0])
+  )
+)
+
+cat("Summary of Associations:\n")
+print(summary_table)
+cat("\n")
+
+# ============================================
+# STEP 2: SEPARATE INTO LISTS
+# ============================================
+
+# Positive association: Proteins that INCREASE with burnout
+proteins_increase_with_burnout <- sig_proteins[sig_proteins$estimate > 0, ]
+proteins_increase_with_burnout <- proteins_increase_with_burnout[
+  order(proteins_increase_with_burnout$adj_p_value), ]
+
+# Negative association: Proteins that DECREASE with burnout
+proteins_decrease_with_burnout <- sig_proteins[sig_proteins$estimate < 0, ]
+proteins_decrease_with_burnout <- proteins_decrease_with_burnout[
+  order(proteins_decrease_with_burnout$adj_p_value), ]
+
+cat("=== POSITIVE ASSOCIATION ===\n")
+cat("Proteins that INCREASE when burnout INCREASES:\n")
+cat("Count:", nrow(proteins_increase_with_burnout), "\n")
+cat("\nTop 10:\n")
+print(proteins_increase_with_burnout[1:min(10, nrow(proteins_increase_with_burnout)), 
+                                     c("protein", "estimate", "p_value", "adj_p_value")])
+
+cat("\n\n=== NEGATIVE ASSOCIATION ===\n")
+cat("Proteins that DECREASE when burnout INCREASES:\n")
+cat("Count:", nrow(proteins_decrease_with_burnout), "\n")
+cat("\nTop 10:\n")
+print(proteins_decrease_with_burnout[1:min(10, nrow(proteins_decrease_with_burnout)), 
+                                     c("protein", "estimate", "p_value", "adj_p_value")])
+
+# Save separate files
+write.csv(proteins_increase_with_burnout, 
+          "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/Proteins_INCREASE_with_Burnout.csv", 
+          row.names = FALSE)
+write.csv(proteins_decrease_with_burnout, 
+          "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/Proteins_DECREASE_with_Burnout.csv", 
+          row.names = FALSE)
+```
+
+```{r}
+colnames(results_q2_clean)[10]<-"FDR"
+colnames(results_q2_clean)[3]<-"Estimate"
+
+results_table<-results_q2_clean
+results_table$P_value<-results_table$p_value
+results_table$Protein_Name<-results_table$protein
+```
+
+
+```{r}
+cat("=== Creating Enhanced Volcano Plots with Quadrant Counts ===\n\n")
+
+create_lmer_volcano <- function(results_table, title, subtitle) {
+  
+  # Prepare data
+  volcano_data <- results_table %>%
+    mutate(
+      neg_log10_p = -log10(P_value),
+      
+      # Color categories
+      Color_category = case_when(
+        FDR < 0.2 & Estimate > 0 ~ "Increased (FDR < 0.2)",
+        FDR < 0.2 & Estimate < 0 ~ "Decreased (FDR < 0.2)",
+        TRUE ~ "Not Significant"
+      ),
+      
+      # Label top proteins
+      Label = case_when(
+        FDR < 0.05 & abs(Estimate) > quantile(abs(Estimate), 0.95, na.rm = TRUE) ~ Protein_Name,
+        TRUE ~ ""
+      )
+    )
+  
+  # Count significant proteins
+  n_increased <- sum(volcano_data$Color_category == "Increased (FDR < 0.2)")
+  n_decreased <- sum(volcano_data$Color_category == "Decreased (FDR < 0.2)")
+  n_sig_total <- n_increased + n_decreased
+  
+  # Create plot
+  p <- ggplot(volcano_data, aes(x = Estimate, y = neg_log10_p, color = Color_category)) +
+    
+    # Points
+    geom_point(alpha = 0.6, size = 2.5) +
+    
+    # Significance threshold line (p = 0.05)
+    geom_hline(yintercept = -log10(0.05), 
+               linetype = "dashed", 
+               color = "black", 
+               linewidth = 1) +
+    
+    # Vertical line at estimate = 0
+    geom_vline(xintercept = 0, 
+               linetype = "solid", 
+               color = "gray30", 
+               linewidth = 0.8) +
+    
+    # Color scheme
+    scale_color_manual(
+      values = c(
+        "Increased (FDR < 0.2)" = "#E53935",      # Red
+        "Decreased (FDR < 0.2)" = "#1E88E5",      # Blue
+        "Not Significant" = "#BDBDBD"             # Gray
+      )
+    ) +
+    
+    # Labels for top proteins
+    geom_text_repel(
+      aes(label = Label),
+      size = 3,
+      max.overlaps = 15,
+      box.padding = 0.5,
+      segment.color = "gray50",
+      show.legend = FALSE
+    ) +
+    
+    # Theme
+    theme_minimal(base_size = 14) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(size = 12)
+    ) +
+    
+    # Labels
+    labs(
+      title = title,
+      subtitle = sprintf("%s | Significant: %d total (%d red, %d blue)",
+                        subtitle, n_sig_total, n_increased, n_decreased),
+      x = "Effect Size (Estimate)",
+      y = "-log10(P-value)"
+    ) +
+    
+    # Annotations
+    annotate("text", 
+             x = max(volcano_data$Estimate, na.rm = TRUE) * 0.7,
+             y = -log10(0.05) + 0.3,
+             label = "p = 0.05",
+             size = 4, 
+             color = "black") +
+    
+    annotate("text", 
+             x = max(volcano_data$Estimate, na.rm = TRUE) * 0.7,
+             y = max(volcano_data$neg_log10_p, na.rm = TRUE) * 0.9,
+             label = paste0("Red: n = ", n_increased),
+             size = 5, fontface = "bold", color = "#E53935") +
+    
+    annotate("text", 
+             x = min(volcano_data$Estimate, na.rm = TRUE) * 0.7,
+             y = max(volcano_data$neg_log10_p, na.rm = TRUE) * 0.9,
+             label = paste0("Blue: n = ", n_decreased),
+             size = 5, fontface = "bold", color = "#1E88E5")
+  
+  return(p)
+}
+```
+
+
+```{r}
+# ============================================
+# STEP 3: CREATE VOLCANO PLOTS
+# ============================================
+
+cat("=== Creating Volcano Plots ===\n\n")
+
+# Plot A: Protein → Burnout
+p_protein_to_burnout <- create_lmer_volcano(
+ results_table,
+  title = "Volcano Plot: Proteins Predicting Burnout",
+  subtitle = "Model: Burnout ~ Protein + (1|ID) | FDR < 0.2"
+)
+
+print(p_protein_to_burnout)
+```
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+
+# ============================================
+# ENHANCED VOLCANO PLOT FUNCTION
+# ============================================
+
+create_improved_volcano <- function(results_table, title_text = "Proteins Predicting Burnout") {
+  
+  # Prepare data
+  volcano_data <- results_table %>%
+    mutate(
+      neg_log10_p = -log10(P_value),
+      
+      # Remove extreme outliers for better visualization
+      Estimate_capped = case_when(
+        Estimate > quantile(Estimate, 0.99, na.rm = TRUE) ~ quantile(Estimate, 0.99, na.rm = TRUE),
+        Estimate < quantile(Estimate, 0.01, na.rm = TRUE) ~ quantile(Estimate, 0.01, na.rm = TRUE),
+        TRUE ~ Estimate
+      ),
+      
+      # Color categories with better labels
+      Significance = case_when(
+        FDR < 0.2 & Estimate > 0 ~ "Up (FDR < 0.2)",
+        FDR < 0.2 & Estimate < 0 ~ "Down (FDR < 0.2)",
+        P_value < 0.05 ~ "Nominal (p < 0.05)",
+        TRUE ~ "Not Significant"
+      ),
+      
+      # Priority labeling: top by FDR and effect size
+      Label_priority = case_when(
+        FDR < 0.01 ~ 1,  # Most significant
+        FDR < 0.05 ~ 2,
+        FDR < 0.2 & abs(Estimate) > median(abs(Estimate), na.rm = TRUE) ~ 3,
+        TRUE ~ 4
+      ),
+      
+      # Create labels for top proteins
+      Protein_Label = case_when(
+        Label_priority <= 2 & row_number() <= 20 ~ Protein_Name,
+        TRUE ~ ""
+      )
+    ) %>%
+    arrange(Label_priority, desc(abs(Estimate)))
+  
+  # Calculate statistics
+  n_up <- sum(volcano_data$Significance == "Up (FDR < 0.2)")
+  n_down <- sum(volcano_data$Significance == "Down (FDR < 0.2)")
+  n_total_sig <- n_up + n_down
+  
+  # FDR thresholds for reference lines
+  fdr_005_threshold <- max(volcano_data$neg_log10_p[volcano_data$FDR <= 0.05], na.rm = TRUE)
+  fdr_01_threshold <- max(volcano_data$neg_log10_p[volcano_data$FDR <= 0.1], na.rm = TRUE)
+  
+  # Create plot
+  p <- ggplot(volcano_data, 
+              aes(x = Estimate_capped, y = neg_log10_p, color = Significance)) +
+    
+    # Add shaded quadrants for context
+    annotate("rect", 
+             xmin = 0, xmax = Inf, ymin = -log10(0.05), ymax = Inf,
+             fill = "#FFE5E5", alpha = 0.3) +
+    annotate("rect", 
+             xmin = -Inf, xmax = 0, ymin = -log10(0.05), ymax = Inf,
+             fill = "#E5F2FF", alpha = 0.3) +
+    
+    # Points with size variation
+    geom_point(aes(size = neg_log10_p), alpha = 0.7) +
+    
+    # Reference lines
+    geom_hline(yintercept = -log10(0.05), 
+               linetype = "dashed", color = "black", linewidth = 0.8) +
+    geom_vline(xintercept = 0, 
+               linetype = "solid", color = "gray20", linewidth = 0.5) +
+    
+    # Optional: FDR thresholds
+    geom_hline(yintercept = fdr_005_threshold, 
+               linetype = "dotted", color = "darkred", linewidth = 0.6, alpha = 0.7) +
+    
+    # Color scheme
+    scale_color_manual(
+      values = c(
+        "Up (FDR < 0.2)" = "#D32F2F",          # Bold red
+        "Down (FDR < 0.2)" = "#1976D2",        # Bold blue
+        "Nominal (p < 0.05)" = "#FFA726",      # Orange
+        "Not Significant" = "#9E9E9E"          # Gray
+      ),
+      breaks = c("Up (FDR < 0.2)", "Down (FDR < 0.2)", 
+                 "Nominal (p < 0.05)", "Not Significant")
+    ) +
+    
+    # Size scale
+    scale_size_continuous(range = c(1, 4), guide = "none") +
+    
+    # Labels for top proteins
+    geom_text_repel(
+      aes(label = Protein_Label),
+      size = 3.5,
+      fontface = "bold",
+      max.overlaps = 20,
+      box.padding = 0.5,
+      point.padding = 0.3,
+      segment.color = "gray40",
+      segment.size = 0.3,
+      min.segment.length = 0,
+      force = 2,
+      show.legend = FALSE
+    ) +
+    
+    # Annotations
+    annotate("text", 
+             x = max(volcano_data$Estimate_capped, na.rm = TRUE) * 0.75,
+             y = -log10(0.05) - 5,
+             label = "p = 0.05",
+             size = 3.5, 
+             fontface = "italic",
+             color = "black") +
+    
+    annotate("text", 
+             x = max(volcano_data$Estimate_capped, na.rm = TRUE) * 0.7,
+             y = max(volcano_data$neg_log10_p, na.rm = TRUE) * 0.95,
+             label = sprintf("Upregulated\nn = %d", n_up),
+             size = 5, 
+             fontface = "bold", 
+             color = "#D32F2F") +
+    
+    annotate("text", 
+             x = min(volcano_data$Estimate_capped, na.rm = TRUE) * 0.7,
+             y = max(volcano_data$neg_log10_p, na.rm = TRUE) * 0.95,
+             label = sprintf("Downregulated\nn = %d", n_down),
+             size = 5, 
+             fontface = "bold", 
+             color = "#1976D2") +
+    
+    # Theme
+    theme_classic(base_size = 14) +
+    theme(
+      # Legend
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 12),
+      legend.background = element_rect(fill = "white", color = "gray80"),
+      legend.key.size = unit(0.8, "cm"),
+      
+      # Plot area
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      
+      # Text
+      plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+      plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray30"),
+      axis.title = element_text(face = "bold", size = 13),
+      axis.text = element_text(size = 11)
+    ) +
+    
+    # Labels
+    labs(
+      title = title_text,
+      subtitle = sprintf(
+        "Model: Burnout ~ Protein + (1|ID) | %d significant proteins (FDR < 0.2)",
+        n_total_sig
+      ),
+      x = "Effect Size (β coefficient)",
+      y = expression(-log[10](italic(P)*'-value')),
+      color = NULL
+    ) +
+    
+    # Scales
+    scale_y_continuous(expand = expansion(mult = c(0.02, 0.1))) +
+    scale_x_continuous(expand = expansion(mult = c(0.1, 0.1)))
+  
+  return(p)
+}
+
+# ============================================
+# CREATE IMPROVED VOLCANO PLOT
+# ============================================
+```
+# ============================================
+# CREATE IMPROVED VOLCANO PLOT
+# ============================================
+
+```{r}
+cat("=== Creating Improved Volcano Plot ===\n\n")
+
+# For Model A: Protein → Burnout
+p_improved_A <- create_improved_volcano(
+  results_table,
+  title_text = "Volcano Plot: Proteins Predicting Burnout"
+)
+
+print(p_improved_A)
+```
+
+
+```{r}
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/VolcanoC1C6.png", 
+       p_improved_A, 
+       width = 8, 
+       height = 10, 
+       dpi = 300,
+       bg = "white")
+
+
+
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/VolcanoC1C6.pdf", 
+       p_improved_A, 
+       width = 8, 
+       height = 10, 
+       dpi = 300,
+       bg = "white")
+
+cat("✓ Volcano_IMPROVED_Burnout_to_Protein.png\n\n")
+```
+
+
+```{r}
+# ============================================
+# ALTERNATIVE: INTERACTIVE VOLCANO PLOT
+# ============================================
+
+library(plotly)
+
+create_interactive_volcano <- function(results_table, title_text) {
+  
+  plot_data <- results_table %>%
+    mutate(
+      neg_log10_p = -log10(P_value),
+      Color_category = case_when(
+        FDR < 0.2 & Estimate > 0 ~ "Up",
+        FDR < 0.2 & Estimate < 0 ~ "Down",
+        TRUE ~ "NS"
+      ),
+      Hover_text = paste0(
+        "<b>", Protein_Name, "</b><br>",
+        "Estimate: ", round(Estimate, 4), "<br>",
+        "P-value: ", format(P_value, scientific = TRUE, digits = 3), "<br>",
+        "FDR: ", format(FDR, scientific = TRUE, digits = 3), "<br>",
+        "t-value: ", round(t_value, 2)
+      )
+    )
+  
+  p <- plot_ly(
+    data = plot_data,
+    x = ~Estimate,
+    y = ~neg_log10_p,
+    color = ~Color_category,
+    colors = c("Up" = "#D32F2F", "Down" = "#1976D2", "NS" = "#9E9E9E"),
+    type = "scatter",
+    mode = "markers",
+    marker = list(size = 8, opacity = 0.7),
+    text = ~Hover_text,
+    hoverinfo = "text"
+  ) %>%
+    layout(
+      title = list(text = title_text, font = list(size = 16, face = "bold")),
+      xaxis = list(title = "Effect Size (Estimate)", zeroline = TRUE),
+      yaxis = list(title = "-log10(P-value)"),
+      hovermode = "closest",
+      shapes = list(
+        # Horizontal line at p=0.05
+        list(
+          type = "line",
+          x0 = min(plot_data$Estimate, na.rm = TRUE),
+          x1 = max(plot_data$Estimate, na.rm = TRUE),
+          y0 = -log10(0.05),
+          y1 = -log10(0.05),
+          line = list(dash = "dash", color = "black", width = 2)
+        )
+      )
+    )
+  
+  return(p)
+}
+
+# Create interactive version
+p_interactive <- create_interactive_volcano(
+  results_protein_to_burnout,
+  "Interactive Volcano Plot: Proteins Predicting Burnout"
+)
+
+htmlwidgets::saveWidget(p_interactive, 
+                        "Volcano_Interactive.html",
+                        selfcontained = TRUE)
+
+cat("✓ Volcano_Interactive.html (hover over points for details)\n\n")
+
+# ============================================
+# PUBLICATION-QUALITY VERSION
+# ============================================
+
+create_publication_volcano <- function(results_table) {
+  
+  volcano_data <- results_table %>%
+    mutate(
+      neg_log10_p = -log10(P_value),
+      Significance = case_when(
+        FDR < 0.05 ~ "FDR < 0.05",
+        FDR < 0.2 ~ "FDR < 0.2",
+        P_value < 0.05 ~ "p < 0.05",
+        TRUE ~ "NS"
+      ),
+      Direction = ifelse(Estimate > 0, "Up", "Down"),
+      Combined = paste0(Direction, "_", Significance),
+      
+      # Label only top 10 by FDR
+      Label = ifelse(row_number() <= 10 & FDR < 0.2, Protein_Name, "")
+    ) %>%
+    arrange(FDR)
+  
+  p <- ggplot(volcano_data, aes(x = Estimate, y = neg_log10_p)) +
+    
+    # Base points
+    geom_point(
+      data = filter(volcano_data, Significance == "NS"),
+      color = "#CCCCCC",
+      alpha = 0.3,
+      size = 2
+    ) +
+    
+    # Significant points
+    geom_point(
+      data = filter(volcano_data, FDR < 0.2),
+      aes(color = Direction, shape = Significance),
+      size = 3,
+      alpha = 0.8
+    ) +
+    
+    # Lines
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_vline(xintercept = 0, linetype = "solid", color = "gray30") +
+    
+    # Labels
+    geom_text_repel(
+      aes(label = Label),
+      size = 3,
+      fontface = "bold.italic",
+      max.overlaps = 15,
+      box.padding = 0.5,
+      segment.size = 0.2
+    ) +
+    
+    # Colors and shapes
+    scale_color_manual(
+      values = c("Up" = "#D32F2F", "Down" = "#1976D2"),
+      name = "Direction"
+    ) +
+    scale_shape_manual(
+      values = c("FDR < 0.05" = 16, "FDR < 0.2" = 17),
+      name = "Significance"
+    ) +
+    
+    # Theme
+    theme_bw(base_size = 12) +
+    theme(
+      panel.grid.minor = element_blank(),
+      legend.position = "right",
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      axis.title = element_text(face = "bold")
+    ) +
+    
+    labs(
+      title = "Volcano Plot: Protein-Burnout Association",
+      x = "Effect Size (β)",
+      y = expression(-log[10](italic(P)))
+    )
+  
+  return(p)
+}
+
+p_publication <- create_publication_volcano(results_protein_to_burnout)
+
+ggsave("Volcano_PUBLICATION_Quality.png", 
+       p_publication, 
+       width = 10, 
+       height = 8, 
+       dpi = 600,
+       bg = "white")
+
+cat("✓ Volcano_PUBLICATION_Quality.png (600 dpi)\n\n")
+
+# ============================================
+# SUMMARY OF IMPROVEMENTS
+# ============================================
+
+cat("\n========================================\n")
+cat("VOLCANO PLOT IMPROVEMENTS\n")
+cat("========================================\n\n")
+
+cat("VISUAL IMPROVEMENTS:\n")
+cat("  ✓ Better axis scaling (removed extreme outliers)\n")
+cat("  ✓ Shaded quadrants for easier interpretation\n")
+cat("  ✓ Point size varies by significance\n")
+cat("  ✓ Better color contrast (bold red/blue)\n")
+cat("  ✓ Improved label placement (ggrepel)\n")
+cat("  ✓ Quadrant annotations with counts\n\n")
+
+cat("STATISTICAL CLARITY:\n")
+cat("  ✓ Multiple significance thresholds shown\n")
+cat("  ✓ FDR threshold line added\n")
+cat("  ✓ Nominal significance category (p<0.05)\n")
+cat("  ✓ Clear legend with all categories\n\n")
+
+cat("PROFESSIONAL TOUCHES:\n")
+cat("  ✓ Publication-quality formatting\n")
+cat("  ✓ Mathematical notation for axis labels\n")
+cat("  ✓ Clean, crisp borders\n")
+cat("  ✓ High-resolution output (300-600 dpi)\n")
+cat("  ✓ White background for publications\n\n")
+
+cat("FILES CREATED:\n")
+cat("  ✓ Volcano_IMPROVED_Protein_to_Burnout.png\n")
+cat("  ✓ Volcano_IMPROVED_Burnout_to_Protein.png\n")
+cat("  ✓ Volcano_Interactive.html\n")
+cat("  ✓ Volcano_PUBLICATION_Quality.png (600 dpi)\n\n")
+
+cat("========================================\n\n")
+```
+
+
+
+```{r}
+ggsave("Volcano_LMER_Protein_to_Burnout.png", p_protein_to_burnout, 
+       width = 12, height = 10, dpi = 300)
+
+cat("✓ Volcano_LMER_Protein_to_Burnout.png\n")
+
+# Plot B: Burnout → Protein
+p_burnout_to_protein <- create_lmer_volcano(
+  results_burnout_to_protein,
+  title = "Volcano Plot: Burnout Predicting Proteins",
+  subtitle = "Model: Protein ~ Burnout + (1|ID) | FDR < 0.2"
+)
+
+print(p_burnout_to_protein)
+
+```
+
+
+
+
+
+
+
+```{r}
+# ============================================
+# VISUALIZATION 1: ENHANCED VOLCANO PLOT
+# ============================================
+
+# Add category for all proteins (including non-significant)
+results_q2_clean$direction_category <- "Not Significant"
+
+results_q2_clean$direction_category[
+  results_q2_clean$adj_p_value < 0.2 & results_q2_clean$estimate > 0
+] <- "(↑ Protein → ↑ Burnout)\n(↓ Protein → ↓ Burnout)"
+
+results_q2_clean$direction_category[
+  results_q2_clean$adj_p_value < 0.2 & results_q2_clean$estimate < 0
+] <- "(↑ Protein → ↓ Burnout)\n(↓ Protein → ↑ Burnout)"
+
+# Label top proteins from each category
+results_q2_clean$protein_label <- ""
+
+# Top 10 positive
+top_positive <- head(proteins_increase_with_burnout, 10)
+results_q2_clean$protein_label[
+  results_q2_clean$protein %in% top_positive$protein
+] <- results_q2_clean$protein[
+  results_q2_clean$protein %in% top_positive$protein
+]
+
+# Top 10 negative
+top_negative <- head(proteins_decrease_with_burnout, 10)
+results_q2_clean$protein_label[
+  results_q2_clean$protein %in% top_negative$protein
+] <- results_q2_clean$protein[
+  results_q2_clean$protein %in% top_negative$protein
+]
+
+# Create volcano plot
+#####Significant
+results_q2_clean$status<-results_q2_clean$estimate
+results_q2_clean<- ifelse(results_q2_clean$status< 0 ,-1 ,1)
+
+
+results_q2_clean$status <- ifelse(results_q2_clean$estimate <0, "Negative:(↑ Protein → ↓ Burnout)\n(↓ Protein → ↑ Burnout)",ifelse(results_q2_clean$estimate >0, "Positive:(↑ Protein → ↑ Burnout)\n(↓ Protein → ↓ Burnout)",)
+
+p.vol<-ggplot(res, aes(x = logFC, y = -log10(p_value))) +
+  geom_point(aes(color = status),shape=16, size=2,alpha = 1) +
+  theme(legend.position = "bottom") + theme_bw(base_size = 10)+ #xlim(c(-0.1, 0.1)) + ylim(c(0, 21))+
+  scale_color_manual(values=c("darkcyan","red4","blue"))+
+  theme_classic(base_size = 8)+ facet_grid(comparison_group~tissue_abbreviation ) +
+  
+  geom_hline(yintercept = 1.3, colour="red", linetype="dashed",size=0.1) +
+  geom_vline(xintercept = 0, colour="gray", linetype="longdash", size=0.1)
+
+```
+
+
+```{r}
+pv <- ggplot(results_q2_clean, 
+             aes(x = log10(estimate), 
+                 y = -log10(p_value), 
+                 color = direction_category,
+                 label = protein_label)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_hline(yintercept = -log10(0.05), 
+             linetype = "dashed", color = "gray30", linewidth = 0.8) +
+  geom_vline(xintercept = 0, 
+             linetype = "solid", color = "black", linewidth = 0.8) +
+  geom_text_repel(
+    size = 3,
+    max.overlaps = 25,
+    box.padding = 0.5,
+    segment.color = "gray50",
+    fontface = "bold"
+  ) +
+  scale_color_manual(
+    values = c(
+      "↑ Protein with ↑ Burnout" = "#D32F2F",      # Red
+      "↓ Protein with ↑ Burnout" = "#1976D2",      # Blue
+      "Not Significant" = "#BDBDBD"                 # Gray
+    )
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    title = "Protein-Burnout Associations",
+    subtitle = sprintf("Positive: n=%d | Negative: n=%d", 
+                      nrow(proteins_increase_with_burnout),
+                      nrow(proteins_decrease_with_burnout)),
+    x = "Effect Size: Protein Effect on Burnout\n← Lower Burnout | Higher Burnout →",
+    y = "-log10(P-value)",
+    color = "Association Type"
+  ) +#xlim(-2,2)+
+  annotate("rect", 
+           xmin = 0, xmax = Inf, ymin = -log10(0.05), ymax = Inf,
+           alpha = 0.1, fill = "red") +
+  annotate("rect", 
+           xmin = -Inf, xmax = 0, ymin = -log10(0.05), ymax = Inf,
+           alpha = 0.1, fill = "blue")
+
+print(pv)
+```
+
+
+```{r}
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/Volcano_Directional_Categories.png", pv, width = 12, height = 9, dpi = 600)
+ggsave("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/Volcano_Directional_Categories.pdf", pv, width = 12, height = 9, dpi = 600)
+```
+
+#check those overlapping proteins in burnout c1 and c6 values with meanigful change.
+
+```{r}
+q2_cleanC1C6<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/results_q2_cleanC1C6.csv")
+
+meanigfulChange<- read.csv("/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/result_StreamlitApp/Meaningful_Change1_3/AcrossIndi_GroupAnalysis_Indepen.csv")
+
+colnames(q2_cleanC1C6)
+
+dxx<- merge(q2_cleanC1C6, meanigfulChange, by.x = "protein", by.y = "Protein")
+write.csv(dxx, "/Users/nasimbararpour/Library/CloudStorage/Box-Box/NasimBararpour/Lasting_Change_Study/Olink/Datasets/res_lmerlongitudinal/C1C6/MeanigfulAssociated.csv")
+```
+
